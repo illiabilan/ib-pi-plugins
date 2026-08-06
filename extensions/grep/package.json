@@ -1,0 +1,12 @@
+{
+  "name": "grep",
+  "version": "1.0.0",
+  "description": "Grep (ripgrep) extension for Pi agent",
+  "main": "index.ts",
+  "scripts": {
+    "build": "echo 'No build needed for this extension'"
+  },
+  "keywords": ["pi", "grep", "search", "extension"],
+  "author": "Pi Agent",
+  "license": "MIT"
+}
