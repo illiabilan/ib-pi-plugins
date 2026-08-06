@@ -1,0 +1,14 @@
+{
+  "name": "code_viewer",
+  "version": "1.0.0",
+  "description": "Auto-tags un-tagged fenced code blocks in assistant responses so pi's built-in Markdown renderer syntax-highlights them",
+  "main": "index.ts",
+  "license": "MIT",
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "^0.83.0",
+    "@earendil-works/pi-tui": "^0.83.0",
+    "@types/node": "^26.1.2",
+    "jiti": "^2.7.0",
+    "typescript": "^7.0.2"
+  }
+}

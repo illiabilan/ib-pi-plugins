@@ -9,9 +9,11 @@ pi-plugins/
 ├── extensions/     # Pi extensions (tools, widgets, infrastructure)
 │   ├── active-subagents-widget/
 │   ├── code-search/
+│   ├── code_viewer/
 │   ├── grep/
 │   ├── jira/
 │   ├── multi-file-read/
+│   ├── podman-sandbox/
 │   ├── subagent/
 │   └── token-stats/
 ├── skills/         # SKILL.md packages, loaded on-demand
@@ -43,6 +45,14 @@ TUI widget that displays currently active subagent delegations in real-time.
 Shows active subagent tasks, their agents, and status. Includes full validation
 reports and test documentation.
 
+#### `extensions/code_viewer`
+Auto-tags un-tagged fenced ` ``` ` code blocks in assistant responses (JSON,
+bash, Python, JS/TS, Go, Rust, Java, C#, C/C++, SQL, YAML, HTML, CSS,
+Dockerfile) using deterministic, precision-first sniffers, so Pi's built-in
+Markdown renderer syntax-highlights them exactly as it does for correctly
+tagged fences. Already-tagged fences and ambiguous content are left
+untouched. See `extensions/code_viewer/README.md`.
+
 #### `extensions/grep`
 Enhanced grep functionality for Pi with regex support, context lines, and
 configurable output limits. Provides text pattern search capabilities.
@@ -54,6 +64,15 @@ via the Jira REST API. Supports custom field conventions and JQL queries.
 #### `extensions/multi-file-read`
 Efficiently read multiple files in one call with line numbers, per-file limits,
 and shared byte budget. Includes smoke tests and risk verification.
+
+#### `extensions/podman-sandbox`
+Routes the `bash` tool (and `!`/`!!` user-bash) into an isolated, long-lived
+Podman container per project - separate filesystem root, PID namespace, and
+(by default) network namespace, with the project directory bind-mounted so
+`read`/`write`/`edit`/`grep`/`find`/`ls` keep working unmodified on the host.
+Fails open with a machine-visible `[podman-sandbox: UNSANDBOXED fallback...]`
+tag when podman is unavailable (or fails closed via config). See
+`extensions/podman-sandbox/README.md`.
 
 #### `extensions/subagent`
 Pi's subagent primitive (delegated, isolated-context agent runs). Required
@@ -134,6 +153,9 @@ cp -r extensions/multi-file-read ~/.pi/agent/extensions/multi-file-read
 
 cp -r extensions/subagent ~/.pi/agent/extensions/subagent
 cp -r extensions/token-stats ~/.pi/agent/extensions/token-stats
+
+cp -r extensions/code_viewer ~/.pi/agent/extensions/code_viewer
+(cd ~/.pi/agent/extensions/code_viewer && npm install)
 
 # Skills
 cp -r skills/agentic-tool-validation-loop ~/.pi/agent/skills/agentic-tool-validation-loop
