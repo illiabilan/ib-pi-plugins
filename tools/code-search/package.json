@@ -1,0 +1,28 @@
+{
+  "name": "pi-code-search",
+  "version": "1.0.0",
+  "description": "Fast, syntax-aware code navigation for Pi dev, powered by tree-sitter.",
+  "type": "module",
+  "keywords": [
+    "pi",
+    "pi-coding-agent",
+    "code-search",
+    "tree-sitter",
+    "code-navigation",
+    "symbol-search"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "web-tree-sitter": "0.20.8",
+    "tree-sitter-wasms": "^0.1.13",
+    "glob": "^10.4.0"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*",
+    "typebox": "*"
+  },
+  "pi": {
+    "extensions": ["./code-search.ts"]
+  }
+}

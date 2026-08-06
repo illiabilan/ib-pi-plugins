@@ -1,0 +1,16 @@
+{
+  "name": "active-subagents-widget",
+  "version": "1.0.0",
+  "description": "Pi extension to show active subagents as a widget",
+  "type": "module",
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "typebox": "*",
+    "typescript": "^5.9.3"
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "name": "multi-file-read",
+  "version": "1.0.0",
+  "description": "Read multiple text files in a single Pi tool call",
+  "main": "index.ts",
+  "license": "MIT",
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "^0.83.0",
+    "@earendil-works/pi-tui": "^0.83.0",
+    "@types/node": "^26.1.2",
+    "jiti": "^2.7.0",
+    "typebox": "^1.3.10",
+    "typescript": "^7.0.2"
+  }
+}
