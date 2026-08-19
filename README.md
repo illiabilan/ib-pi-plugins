@@ -8,12 +8,26 @@ organized to mirror Pi's own resource layout
 pi-plugins/
 ├── extensions/     # Pi extensions (tools, widgets, infrastructure)
 │   ├── active-subagents-widget/
+│   ├── archive-inspect/
+│   ├── bash-guardrail/
 │   ├── code-search/
 │   ├── code_viewer/
+│   ├── diff/
+│   ├── env-info/
+│   ├── file-ops/
+│   ├── file-write-plus/
+│   ├── gh/
+│   ├── git/
+│   ├── gradle-build/
 │   ├── grep/
 │   ├── jira/
+│   ├── list-files/
 │   ├── multi-file-read/
+│   ├── node-project/
+│   ├── path-stats/
+│   ├── pi-trace/
 │   ├── podman-sandbox/
+│   ├── process/
 │   ├── subagent/
 │   └── token-stats/
 ├── skills/         # SKILL.md packages, loaded on-demand
@@ -54,8 +68,52 @@ tagged fences. Already-tagged fences and ambiguous content are left
 untouched. See `extensions/code_viewer/README.md`.
 
 #### `extensions/grep`
-Enhanced grep functionality for Pi with regex support, context lines, and
-configurable output limits. Provides text pattern search capabilities.
+Ripgrep-backed search: regex, context lines, batched `queries`, file-name
+globbing, `include`/`exclude`, and the flags that used to force a bash
+fallback — `invertMatch` (-v), `notPattern` (`| grep -v`), `outputMode`
+(content/filesOnly/count/exists), `onlyMatching` + `captureGroup` with value
+aggregation, `wordBoundary`, `maxLineLength`.
+
+### The bash-replacement set
+
+Built from an analysis of 266 real sessions (2160 tool calls, of which **bash
+was 1334 — 62%**; 1539 shell commands in total). Each tool below targets a
+measured cluster of those commands; each was validated head-to-head against
+the bash idiom it replaces, not just written. See each extension's README for
+its own numbers.
+
+| Extension | Tool(s) | Replaces | bash calls in corpus |
+|---|---|---|---|
+| `list-files` | `list_files` | `find -name/-type/-maxdepth/-newermt`, `ls -la`, `ls \| grep` | 356 |
+| `grep` | `grep` | `grep -v/-o/-c/-q`, `\| grep -v`, `\| wc -l` | 606 |
+| `file-ops` | `file_ops` | `rm -rf`, `mkdir -p`, `cp`, `mv`, `ln -s`, `chmod` | 195 |
+| `git` | `git` | `git status/diff/log/show/commit/push/...` | 148 |
+| `pi-trace` | `pi_trace` | `pi -p --mode json > log` + `node -e` trace parsers | 250 |
+| `node-project` | `node_project` | `npm install`, `npx tsc --noEmit ...` | 102 |
+| `path-stats` | `path_stats` | `wc -l`, `wc -c`, `du -sh`, `stat` | 88 |
+| `process` | `process` | `cmd & sleep N; kill -9 $!`, `kill -0` poll loops | 72 |
+| `gradle-build` | `gradle_build` | `./gradlew ... \| grep -E "FAILED\|error:"` | 60 |
+| `file-write-plus` | `append_file`, `replace_in_file` | `cat >> f <<EOF`, `sed -i`, inline python rewrites | 52 |
+| `diff` | `diff` | `diff -u a b \| head` | 40 |
+| `env-info` | `env_info` | `which`, `command -v`, `env \| grep KEY` | 28 |
+| `archive-inspect` | `archive_inspect` | `unzip` + `javap` over gradle-cache jars | 24 |
+| `gh` | `gh` | `gh pr create/view/search/merge` | 15 |
+| `bash-guardrail` | *(no tool)* | intercepts leftover bash habits | — |
+
+Highlights from validation: `list_files` matches `find` byte-for-byte on 23715
+files in 4.2 s vs 57 s; `node_project` cuts a typecheck task by 79–94% tokens;
+`env_info` prevented a real 192-char API token from being written to the
+session log, which the bash baseline leaked; `file_ops` and `git` refused every
+unapproved mutation, including when told "don't ask me"; `archive_inspect`
+reproduces `javap` output byte-identically.
+
+#### `extensions/bash-guardrail`
+A `tool_call` interceptor (registers no tool, so it costs **0 prompt tokens**).
+Blocks single-intent bash commands that have an exact tool equivalent —
+answering with the concrete replacement call, arguments already filled in —
+nudges composite pipelines, and silently allows real shell work. Fails open.
+BLOCK precision measured at 100% (0 false blocks) on 200 hand-labelled commands
+drawn from 1963 real bash calls. `/guardrail` toggles block → nudge-only → off.
 
 #### `extensions/jira`
 Jira integration for Pi. Read, search, create, update, and link Jira issues
@@ -134,6 +192,50 @@ behavioral testing in general.
 `/build-tool <description>` and `/build-agent <description>` - convenience
 wrappers that delegate to `pi-builder` and `agent-builder` respectively.
 
+## Deployment: what to load globally vs per project
+
+Tool schemas are not free — they are re-sent (and cache-written) on every
+session. Measured with `pi --mode json -p --no-session "Reply with exactly: ok"`
+reading turn-1 `input + cacheWrite`:
+
+| Setup | Prompt tokens |
+|---|---|
+| Before any of these tools | 15,008 |
+| All 14 loaded globally (naive) | 46,187 |
+| Global set only, after scoping | 29,878 |
+| Same, after the schema diet | **23,666** |
+| Inside `pi-plugins` (+ project-local set) | 34,665 |
+| Inside an Android repo (+ project-local set) | 34,353 |
+
+So: load the general-purpose ones globally and scope the rest to the projects
+that need them via `.pi/extensions` (project-local extensions load only after
+the project is trusted — `--approve`, or a saved entry in `trust.json`).
+
+- **Global:** `grep`, `list-files`, `git`, `file-ops`, `path-stats`, `diff`,
+  `file-write-plus`, `env-info`, `bash-guardrail`
+- **Project-local, TypeScript/pi work:** `node-project`, `pi-trace`, `gh`,
+  `process`
+- **Project-local, Android/Gradle work:** `gradle-build`, `archive-inspect`,
+  `gh`, `process`
+
+```bash
+# global
+ln -sfn "$PWD/extensions/list-files" ~/.pi/agent/extensions/list-files
+
+# project-local (from inside the target repo)
+mkdir -p .pi/extensions
+ln -sfn /path/to/pi-plugins/extensions/gradle-build .pi/extensions/gradle-build
+echo ".pi/" >> .git/info/exclude   # keep it out of the shared repo
+```
+
+The schema diet that produced the last row cut 6,212 tokens (-29%) with a
+27-case behavioural regression suite guarding every cut. One finding worth
+repeating: **a guideline sentence that substitutes for a missing code-level
+guard must never be merged into a longer bullet.** Stripping guidelines proved
+that `file_ops`'s "preview → user approves → then confirm" rule *is* its safety
+mechanism (unlike `git`, which enforces the same thing in code), and without it
+the agent self-approved its own preview token within a single turn.
+
 ## Install everything globally
 
 ```bash
@@ -156,6 +258,15 @@ cp -r extensions/token-stats ~/.pi/agent/extensions/token-stats
 
 cp -r extensions/code_viewer ~/.pi/agent/extensions/code_viewer
 (cd ~/.pi/agent/extensions/code_viewer && npm install)
+
+# bash-replacement set (no runtime dependencies — plain copy is enough)
+for e in grep list-files git file-ops path-stats diff file-write-plus \
+         env-info bash-guardrail; do
+  cp -r "extensions/$e" ~/.pi/agent/extensions/"$e"
+done
+# and, per project that needs them:
+#   node-project pi-trace gh process        -> TypeScript / pi tooling repos
+#   gradle-build archive-inspect gh process -> Android / Gradle repos
 
 # Skills
 cp -r skills/agentic-tool-validation-loop ~/.pi/agent/skills/agentic-tool-validation-loop
