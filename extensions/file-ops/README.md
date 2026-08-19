@@ -69,6 +69,18 @@ needed only for type-checking and the test suite (`typescript`, `jiti`, pi type 
      The token is a hash of the plan **including observed filesystem state**, so it is
      rejected if anything changed since the preview (the message then says the
      filesystem *changed* rather than "bad token"), and it is single-use.
+   - **Same-turn self-approval is refused in code** (`SELF_APPROVAL_BLOCKED`): a token
+     may only be redeemed once the session's user-message count has grown past the
+     value recorded when the preview was issued — i.e. after the user actually replied.
+     Re-previewing within the same turn does not advance that anchor. A token for a plan
+     that was never previewed is refused as `NO_PREVIEW`.
+     Automation that genuinely has no human in the loop can opt out with
+     `PI_FILE_OPS_UNATTENDED=1`.
+
+     > This guard exists because of a measured incident: while the tool's prompt
+     > guidelines were being compressed, the model read its own preview and replayed the
+     > token inside a single turn, deleting 42 files. Prose alone was the only thing
+     > enforcing the gate; now the gate is code and the prose is a reminder.
 3. **Hard refusals (no confirmation can override):**
 
 | Code | Case |
@@ -135,7 +147,7 @@ where `status ∈ refused | dry-run | noop | needs-approval | declined | done | 
 ## Tests
 
 ```bash
-node guardrail-tests.mjs      # 102 assertions, ~2s, all sandboxes under /tmp/fileops-tests-*
+node guardrail-tests.mjs      # 113 assertions, ~2s, all sandboxes under /tmp/fileops-tests-*
 KEEP_SANDBOX=1 node guardrail-tests.mjs   # keep the sandboxes for inspection
 ```
 
@@ -143,8 +155,9 @@ Covers: 25 hard-refusal cases, approval-token flow (missing/bogus/stale/single-u
 state-bound token invalidation after a mid-session change, dryRun snapshot equality for
 all 7 actions, glob deletes, overwrite policies, unicode/space paths, symlink escape +
 cycle + symlinked-dir removal, interactive `ctx.ui.confirm` accept/decline path,
-permission-denied partial failures, and a regression guard that destructive ops still
-work in ordinary (non-temp) project directories.
+permission-denied partial failures, same-turn self-approval refusal (including the
+re-preview replay and the `PI_FILE_OPS_UNATTENDED` opt-out), and a regression guard that
+destructive ops still work in ordinary (non-temp) project directories.
 
 ## Measured behaviour
 

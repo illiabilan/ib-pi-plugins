@@ -679,21 +679,43 @@ function fingerprint(plan: Plan, cwd: string): string {
 	return "fileops-" + createHash("sha256").update(JSON.stringify(fp)).digest("hex").slice(0, 12);
 }
 
+/**
+ * Number of user messages in the current session branch.
+ *
+ * This is the anchor for the same-turn self-approval guard: a token issued while the
+ * user had sent N messages may only be redeemed once that count has grown, i.e. after
+ * the user actually replied to the preview.
+ */
+function userTurnCount(ctx: { sessionManager?: { getEntries?: () => unknown[] } }): number {
+	try {
+		const entries = (ctx.sessionManager?.getEntries?.() ?? []) as Array<{
+			type?: string;
+			message?: { role?: string };
+		}>;
+		return entries.filter((e) => e?.type === "message" && e.message?.role === "user").length;
+	} catch {
+		return 0;
+	}
+}
+
 /** Tokens we have issued, so we can tell "stale/state changed" from "never previewed". */
-const issued = new Map<string, number>();
-function rememberToken(token: string): void {
-	issued.set(token, Date.now());
+const issued = new Map<string, { at: number; userTurns: number }>();
+function rememberToken(token: string, userTurns: number): void {
+	// Keep the ORIGINAL issue turn: re-previewing in the same turn must not
+	// advance the anchor and thereby unlock a same-turn confirm.
+	const prev = issued.get(token);
+	issued.set(token, { at: Date.now(), userTurns: prev?.userTurns ?? userTurns });
 	if (issued.size > 200) {
-		for (const [k, at] of issued) {
-			if (Date.now() - at > TOKEN_TTL_MS) issued.delete(k);
+		for (const [k, v] of issued) {
+			if (Date.now() - v.at > TOKEN_TTL_MS) issued.delete(k);
 			if (issued.size <= 100) break;
 		}
 	}
 }
 function tokenState(token: string): "fresh" | "expired" | "unknown" {
-	const at = issued.get(token);
-	if (at === undefined) return "unknown";
-	return Date.now() - at > TOKEN_TTL_MS ? "expired" : "fresh";
+	const v = issued.get(token);
+	if (v === undefined) return "unknown";
+	return Date.now() - v.at > TOKEN_TTL_MS ? "expired" : "fresh";
 }
 
 function kindLabel(t: Target): string {
@@ -1172,8 +1194,9 @@ export default function (pi: ExtensionAPI) {
 					};
 				}
 			} else {
+				const turnsNow = userTurnCount(ctx as { sessionManager?: { getEntries?: () => unknown[] } });
 				if (params.confirm !== token) {
-					rememberToken(token);
+					rememberToken(token, turnsNow);
 					let why: string;
 					if (!params.confirm) why = "No approval token was supplied.";
 					else {
@@ -1206,6 +1229,47 @@ export default function (pi: ExtensionAPI) {
 							totals: plan.totals,
 						},
 					};
+				}
+				// ---- token matches: now prove a HUMAN approved it -------------------
+				// Without this, the model can read its own preview and replay the token inside
+				// the SAME turn — which is exactly what happened when the guideline sentence
+				// was removed during the schema diet (42 files deleted, no human in the loop).
+				const seenAt = issued.get(params.confirm);
+				const unattended = process.env.PI_FILE_OPS_UNATTENDED === "1";
+				if (!unattended) {
+					if (!seenAt) {
+						return {
+							content: [
+								{
+									type: "text" as const,
+									text:
+										`NOT EXECUTED — no preview for this exact plan was issued in this session, so there is nothing the user could have approved.\n\n${preview}\n\n` +
+										`Call this WITHOUT confirm first, show the plan to the user, and wait for their reply.`,
+								},
+							],
+							details: { action: plan.action, status: "refused", code: "NO_PREVIEW", token },
+						};
+					}
+					if (turnsNow <= seenAt.userTurns) {
+						return {
+							content: [
+								{
+									type: "text" as const,
+									text:
+										`NOT EXECUTED — you are replaying the confirm token in the SAME turn that produced the preview, so the user has not actually approved anything.\n\n${preview}\n\n` +
+										`Stop here. Show the plan above to the user (verbatim if HIGH RISK), end your turn, and repeat this call with confirm:"${token}" only after they reply approving it. ` +
+										`"I approve in advance" / "don't ask me" in an earlier message is NOT that approval.`,
+								},
+							],
+							details: {
+								action: plan.action,
+								status: "refused",
+								code: "SELF_APPROVAL_BLOCKED",
+								risk: plan.risk.level,
+								token,
+							},
+						};
+					}
 				}
 				issued.delete(params.confirm); // single use
 			}
