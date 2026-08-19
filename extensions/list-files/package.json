@@ -1,0 +1,15 @@
+{
+  "name": "list-files",
+  "version": "1.0.0",
+  "description": "List/find files and directories in a single Pi tool call (replaces bash find/ls pipelines)",
+  "main": "index.ts",
+  "license": "MIT",
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "^0.84.2",
+    "@earendil-works/pi-tui": "^0.84.2",
+    "@types/node": "^26.1.2",
+    "jiti": "^2.7.0",
+    "typebox": "^1.3.10",
+    "typescript": "^5.9.3"
+  }
+}
