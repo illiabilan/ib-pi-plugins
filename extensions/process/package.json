@@ -1,0 +1,12 @@
+{
+  "name": "process",
+  "version": "1.0.0",
+  "description": "Background process manager for the Pi agent (start/poll/tail/wait/kill/list/clean)",
+  "main": "index.ts",
+  "keywords": ["pi", "process", "background", "extension"],
+  "author": "Pi Agent",
+  "license": "MIT",
+  "pi": {
+    "extensions": ["./index.ts"]
+  }
+}
