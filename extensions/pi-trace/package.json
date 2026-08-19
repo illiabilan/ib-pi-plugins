@@ -1,0 +1,12 @@
+{
+  "name": "pi-trace",
+  "version": "1.0.0",
+  "description": "Run and analyze pi agent traces / A-B benchmarks (pi --mode json event streams and saved session files)",
+  "main": "index.ts",
+  "scripts": {
+    "build": "echo 'No build needed for this extension'"
+  },
+  "keywords": ["pi", "trace", "benchmark", "jsonl", "session", "tokens", "extension"],
+  "author": "Pi Agent",
+  "license": "MIT"
+}
