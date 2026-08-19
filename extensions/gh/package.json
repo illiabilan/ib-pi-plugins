@@ -1,0 +1,9 @@
+{
+  "name": "gh",
+  "version": "1.0.0",
+  "description": "GitHub PR/issue workflow extension for Pi — wraps the gh CLI with preview-gated writes",
+  "main": "index.ts",
+  "keywords": ["pi", "github", "gh", "pull-request", "extension"],
+  "author": "Pi Agent",
+  "license": "MIT"
+}
