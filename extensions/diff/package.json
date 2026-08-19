@@ -1,0 +1,14 @@
+{
+  "name": "diff",
+  "version": "1.0.0",
+  "description": "Bounded file/directory/text diff tool for Pi (replaces bash diff/cmp escape hatches)",
+  "main": "index.ts",
+  "license": "MIT",
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "^0.83.0",
+    "@earendil-works/pi-tui": "^0.83.0",
+    "@types/node": "^26.1.2",
+    "typebox": "^1.3.10",
+    "typescript": "^7.0.2"
+  }
+}
