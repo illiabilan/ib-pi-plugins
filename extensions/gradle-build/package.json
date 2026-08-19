@@ -1,0 +1,12 @@
+{
+  "name": "gradle-build",
+  "version": "1.0.0",
+  "description": "Gradle/Android build, test and lint runner for pi, with a parsed failure report instead of raw build logs",
+  "main": "index.ts",
+  "pi": {
+    "extensions": ["./index.ts"]
+  },
+  "keywords": ["pi", "gradle", "android", "kotlin", "build", "test", "lint", "extension"],
+  "author": "Pi Agent",
+  "license": "MIT"
+}
