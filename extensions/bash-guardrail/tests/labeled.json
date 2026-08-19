@@ -1,0 +1,1202 @@
+[
+ {
+  "id": 1,
+  "cwd": "/Users/illiabilan/StudioProjects/pi-plugins",
+  "cmd": "cd /tmp/ts-test && find node_modules/web-tree-sitter -maxdepth 1",
+  "label": "block"
+ },
+ {
+  "id": 2,
+  "cwd": "/Users/illiabilan/.pi",
+  "cmd": "cd /Users/illiabilan && ls -la test-bash-grep.ts",
+  "label": "block"
+ },
+ {
+  "id": 3,
+  "cwd": "/Users/illiabilan/StudioProjects/pi-plugins",
+  "cmd": "find /opt/homebrew/lib/node_modules/@earendil-works/pi-coding-agent/examples/extensions/subagent -type f",
+  "label": "block"
+ },
+ {
+  "id": 4,
+  "cwd": "/Users/illiabilan/StudioProjects/pi-plugins",
+  "cmd": "ls -a extensions/token-stats/",
+  "label": "block"
+ },
+ {
+  "id": 5,
+  "cwd": "/private/tmp/nodex-bench/ext",
+  "cmd": "ls -la /private/tmp/nodex-bench/ext",
+  "label": "block"
+ },
+ {
+  "id": 6,
+  "cwd": "/Users/illiabilan/StudioProjects/busboy",
+  "cmd": "ls -la bb/src/",
+  "label": "block"
+ },
+ {
+  "id": 7,
+  "cwd": "/private/tmp/skill-test",
+  "cmd": "find / -iname \"*agentic-tool-validation-loop*\" 2>/dev/null",
+  "label": "nudge"
+ },
+ {
+  "id": 8,
+  "cwd": "/private/tmp/fwp-bench/dollar/with",
+  "cmd": "find /private/tmp/fwp-bench/dollar/with -name \"*.kt\"",
+  "label": "block"
+ },
+ {
+  "id": 9,
+  "cwd": "/Users/illiabilan/StudioProjects/pi-plugins",
+  "cmd": "ls -F tools/",
+  "label": "block"
+ },
+ {
+  "id": 10,
+  "cwd": "/Users/illiabilan/StudioProjects/pi-plugins",
+  "cmd": "find . -name \"*test*\" -o -name \"*spec*\"",
+  "label": "block"
+ },
+ {
+  "id": 11,
+  "cwd": "/Users/illiabilan/StudioProjects/diner-android",
+  "cmd": "find . -name \"CreditRepositoryTest*\" -not -path \"*/build/*\"",
+  "label": "block"
+ },
+ {
+  "id": 12,
+  "cwd": "/Users/illiabilan/StudioProjects/pi-plugins",
+  "cmd": "ls -la ~/.pi/agent/extensions/subagent/ 2>/dev/null",
+  "label": "block"
+ },
+ {
+  "id": 13,
+  "cwd": "/private/tmp/nodex-fix/failtest",
+  "cmd": "ls -la /private/tmp/nodex-fix/failtest",
+  "label": "block"
+ },
+ {
+  "id": 14,
+  "cwd": "/private/tmp/ghx-bench/workdir",
+  "cmd": "cd /private/tmp/ghx-bench/workdir && ls -la",
+  "label": "block"
+ },
+ {
+  "id": 15,
+  "cwd": "/Users/illiabilan/.pi",
+  "cmd": "ls -la agent/",
+  "label": "block"
+ },
+ {
+  "id": 16,
+  "cwd": "/private/tmp/nodex-fix/unresolved",
+  "cmd": "ls -la /private/tmp/nodex-fix/unresolved",
+  "label": "block"
+ },
+ {
+  "id": 17,
+  "cwd": "/Users/illiabilan/StudioProjects/pi-plugins",
+  "cmd": "ls -R extensions/",
+  "label": "block"
+ },
+ {
+  "id": 18,
+  "cwd": "/Users/illiabilan/StudioProjects/diner-android",
+  "cmd": "# The user provided a ticket ID: ada-48914.\n# I need to fetch the ticket details.\n# I will try to find the correct way to use jira-cli.\n# Since I can't find it in `subagent` directly as an agent named 'jira-cli', \n# and the error \"Tool jira-cli:jira-cli not found\" might mean the tool is named differently.\n# I'll check the project structure and documentation for how to use jira-cli.\n# But first, I'll try to use `jira-cli` as a command if it's a CLI tool in the PATH.\n# If not, I'll check if there is a script or something.\nls -F\n",
+  "label": "block"
+ },
+ {
+  "id": 19,
+  "cwd": "/Users/illiabilan/StudioProjects/busboy",
+  "cmd": "ls -la",
+  "label": "block"
+ },
+ {
+  "id": 20,
+  "cwd": "/Users/illiabilan/.pi",
+  "cmd": "ls -la ./agent/extensions/bash-grep/",
+  "label": "block"
+ },
+ {
+  "id": 21,
+  "cwd": "/Users/illiabilan/StudioProjects/diner/diner-android",
+  "cmd": "cd /Users/illiabilan/StudioProjects/diner/diner-android && grep -n \"fun getPlanSettings\\|fun getManagedSettings\\|fun getDinerAssociationResponse\\|fun getCashback\\|fun getPaymentsInfo\\|fun getTextResponses\\|fun getPlanMigrationAssociation\\|fun getCashbackResponse\\|fun getDinerCashback\\|fun getCashbackSettings\" -A 12 data/models/implementations/src/main/java/com/grubhub/dinerapp/android/dataServices/dto/apiV2/subscriptions/SubscriptionFactory.kt | head -90",
+  "label": "block"
+ },
+ {
+  "id": 22,
+  "cwd": "/Users/illiabilan/StudioProjects/pi-plugins",
+  "cmd": "grep -n \"select\" /opt/homebrew/lib/node_modules/@earendil-works/pi-coding-agent/dist/core/extensions/types.d.ts | head -20",
+  "label": "block"
+ },
+ {
+  "id": 23,
+  "cwd": "/Users/illiabilan/StudioProjects/pi-plugins",
+  "cmd": "# Check examples to see how Type/StringEnum are imported in extensions\ngrep -rn \"import.*Type\\b\\|import.*StringEnum\\|spawn\\|AgentMessage\" /opt/homebrew/lib/node_modules/@earendil-works/pi-coding-agent/examples/ 2>/dev/null | head -20",
+  "label": "block"
+ },
+ {
+  "id": 24,
+  "cwd": "/Users/illiabilan/StudioProjects/pi-plugins",
+  "cmd": "grep -n \"renderCall\\|renderResult\\|RenderTheme\\|interface.*Theme\" /opt/homebrew/lib/node_modules/@earendil-works/pi-coding-agent/dist/core/extensions/types.d.ts | head -20",
+  "label": "block"
+ },
+ {
+  "id": 25,
+  "cwd": "/Users/illiabilan/StudioProjects/pi-plugins",
+  "cmd": "grep -n \"^import\" /opt/homebrew/lib/node_modules/@earendil-works/pi-coding-agent/examples/extensions/built-in-tool-renderer.ts",
+  "label": "block"
+ },
+ {
+  "id": 26,
+  "cwd": "/private/tmp/code-search-test-project",
+  "cmd": "grep -rl \"code-index\" /opt/homebrew/lib/node_modules/@earendil-works/pi-coding-agent/ 2>/dev/null | head -20",
+  "label": "block"
+ },
+ {
+  "id": 27,
+  "cwd": "/Users/illiabilan/StudioProjects/diner",
+  "cmd": "cd /Users/illiabilan/StudioProjects/diner/diner-android && grep -n \"getPotentialSavingsInfo\" -A 60 features/subscriptions/src/main/java/com/grubhub/features/subscriptions/SubscriptionCalculationsHelperImpl.kt | head -90",
+  "label": "block"
+ },
+ {
+  "id": 28,
+  "cwd": "/Users/illiabilan/StudioProjects/diner/diner-android",
+  "cmd": "cd /Users/illiabilan/StudioProjects/diner/diner-android; grep -n \"TOGGLE_ENABLED\\|BE_DRIVEN\" features/subscriptions/src/main/java/com/grubhub/features/subscriptions/analytics/SubscriptionCheckout2Analytics.kt",
+  "label": "block"
+ },
+ {
+  "id": 29,
+  "cwd": "/Users/illiabilan/StudioProjects/pi-plugins",
+  "cmd": "grep -n \"SubagentParams\" /Users/illiabilan/.pi/agent/extensions/subagent/index.ts",
+  "label": "block"
+ },
+ {
+  "id": 30,
+  "cwd": "/private/tmp/fwp-bench/rename2/without",
+  "cmd": "grep -n \"orderMinimum\" /private/tmp/fwp-bench/rename2/without/test/SharedSubscriptionUtilsTest.kt",
+  "label": "block"
+ },
+ {
+  "id": 31,
+  "cwd": "/Users/illiabilan/.pi",
+  "cmd": "grep -r \"registerTool\" /Users/illiabilan/.pi/agent/extensions/code-search/code-search.ts | head -3",
+  "label": "block"
+ },
+ {
+  "id": 32,
+  "cwd": "/Users/illiabilan/StudioProjects/pi-plugins",
+  "cmd": "grep -n \"container.addChild\" /Users/illiabilan/.pi/agent/extensions/subagent/index.ts",
+  "label": "block"
+ },
+ {
+  "id": 33,
+  "cwd": "/private/tmp/fwp-bench/rename/without",
+  "cmd": "grep -rn \"orderMinimum\" /private/tmp/fwp-bench/rename/without/",
+  "label": "block"
+ },
+ {
+  "id": 34,
+  "cwd": "/Users/illiabilan/StudioProjects/pi-plugins",
+  "cmd": "grep -n \"^## Install everything\\|^cp \\|^(cd\" /Users/illiabilan/StudioProjects/pi-plugins/README.md",
+  "label": "block"
+ },
+ {
+  "id": 35,
+  "cwd": "/Users/illiabilan/StudioProjects/pi-plugins",
+  "cmd": "sed -n '835p' /Users/illiabilan/.pi/agent/extensions/subagent/index.ts",
+  "label": "block"
+ },
+ {
+  "id": 36,
+  "cwd": "/Users/illiabilan/StudioProjects/diner/diner-android",
+  "cmd": "cd /Users/illiabilan/StudioProjects/diner/diner-android && sed -n 1485,1530p app/src/main/java/com/grubhub/dinerapp/android/order/restaurant/menu/menu/presentation/MenuViewModel.java",
+  "label": "block"
+ },
+ {
+  "id": 37,
+  "cwd": "/Users/illiabilan/StudioProjects/diner/diner-android",
+  "cmd": "cd /Users/illiabilan/StudioProjects/diner/diner-android && sed -n '95,140p' features/subscriptions/src/test/java/com/grubhub/features/subscriptions/v2/user/UserSubscriptionFacadeImplTest.kt",
+  "label": "block"
+ },
+ {
+  "id": 38,
+  "cwd": "/Users/illiabilan/StudioProjects/pi-plugins",
+  "cmd": "sed -n 225,275p /opt/homebrew/lib/node_modules/@earendil-works/pi-coding-agent/docs/extensions.md",
+  "label": "block"
+ },
+ {
+  "id": 39,
+  "cwd": "/Users/illiabilan/StudioProjects/pi-plugins",
+  "cmd": "cd /Users/illiabilan/StudioProjects/pi-plugins/code-search && sed -n '830,840p' code-search.ts",
+  "label": "block"
+ },
+ {
+  "id": 40,
+  "cwd": "/Users/illiabilan/StudioProjects/diner-android",
+  "cmd": "cd /Users/illiabilan/StudioProjects/diner-android/features/subscriptions/src/test/java/com/grubhub/features/subscriptions && sed -n 1,140p analytics/SubscriptionCelebrationInterstitialAnalyticsTest.kt",
+  "label": "block"
+ },
+ {
+  "id": 41,
+  "cwd": "/Users/illiabilan/StudioProjects/pi-plugins",
+  "cmd": "cat ~/.pi/agent/agents/code_writer.md 2>&1",
+  "label": "block"
+ },
+ {
+  "id": 42,
+  "cwd": "/Users/illiabilan/StudioProjects/pi-plugins",
+  "cmd": "head -20 /opt/homebrew/lib/node_modules/@earendil-works/pi-coding-agent/examples/extensions/built-in-tool-renderer.ts",
+  "label": "block"
+ },
+ {
+  "id": 43,
+  "cwd": "/Users/illiabilan/StudioProjects/pi-plugins",
+  "cmd": "cd /Users/illiabilan/StudioProjects/pi-plugins/extensions/multi-file-read && sed -n 1,80p node_modules/@earendil-works/pi-coding-agent/dist/modes/interactive/theme/theme.d.ts",
+  "label": "block"
+ },
+ {
+  "id": 44,
+  "cwd": "/Users/illiabilan/StudioProjects/pi-plugins",
+  "cmd": "sed -n '830p' /Users/illiabilan/.pi/agent/extensions/subagent/index.ts",
+  "label": "block"
+ },
+ {
+  "id": 45,
+  "cwd": "/Users/illiabilan/StudioProjects/diner-android",
+  "cmd": "cd /Users/illiabilan/StudioProjects/diner-android && sed -n '138,142p' features/subscriptions/src/test/java/com/grubhub/features/subscriptions/domain/usecase/GetSubscriptionPlacementUseCaseTest.kt",
+  "label": "block"
+ },
+ {
+  "id": 46,
+  "cwd": "/Users/illiabilan/StudioProjects/diner/diner-android",
+  "cmd": "sed -n 260,300p app/src/main/java/com/grubhub/dinerapp/android/dataServices/services/ReviewService.java",
+  "label": "block"
+ },
+ {
+  "id": 47,
+  "cwd": "/Users/illiabilan/StudioProjects/pi-plugins",
+  "cmd": "sed -n '828p' /Users/illiabilan/.pi/agent/extensions/subagent/index.ts",
+  "label": "block"
+ },
+ {
+  "id": 48,
+  "cwd": "/Users/illiabilan/StudioProjects/pi-plugins",
+  "cmd": "head -20 extensions/subagent/index.ts",
+  "label": "block"
+ },
+ {
+  "id": 49,
+  "cwd": "/Users/illiabilan/StudioProjects/diner",
+  "cmd": "head -30 ~/.pi/agent/agents/code_writer.md",
+  "label": "block"
+ },
+ {
+  "id": 50,
+  "cwd": "/Users/illiabilan/StudioProjects/pi-plugins",
+  "cmd": "sed -n '50,70p' /Users/illiabilan/.pi/agent/extensions/subagent/agents.ts",
+  "label": "block"
+ },
+ {
+  "id": 51,
+  "cwd": "/Users/illiabilan/StudioProjects/pi-plugins",
+  "cmd": "sed -n '832p' /Users/illiabilan/.pi/agent/extensions/subagent/index.ts",
+  "label": "block"
+ },
+ {
+  "id": 52,
+  "cwd": "/Users/illiabilan/StudioProjects/pi-plugins",
+  "cmd": "sed -n '830,840p' /Users/illiabilan/.pi/agent/extensions/subagent/index.ts",
+  "label": "block"
+ },
+ {
+  "id": 53,
+  "cwd": "/Users/illiabilan/StudioProjects/diner-android",
+  "cmd": "cd /Users/illiabilan/StudioProjects/diner-android && git diff --stat features/subscriptions/src/test/java/com/grubhub/features/subscriptions/domain/usecase/GetAccountSubscriptionUrgencyPeriodUseCaseTest.kt features/subscriptions/src/test/java/com/grubhub/features/subscriptions/domain/usecase/GetAccountNonMemberSavingsUseCaseTest.kt features/subscriptions/src/test/java/com/grubhub/features/subscriptions/domain/usecase/GetSubscriptionPlacementUseCaseTest.kt",
+  "label": "block"
+ },
+ {
+  "id": 54,
+  "cwd": "/Users/illiabilan/StudioProjects/pi-plugins",
+  "cmd": "git add -A",
+  "label": "block"
+ },
+ {
+  "id": 55,
+  "cwd": "/Users/illiabilan/StudioProjects/pi-plugins",
+  "cmd": "git commit -m \"Initial commit: Pi plugins project\"",
+  "label": "block"
+ },
+ {
+  "id": 56,
+  "cwd": "/Users/illiabilan/StudioProjects/diner-android",
+  "cmd": "cd /Users/illiabilan/StudioProjects/diner-android && git diff features/subscriptions/src/main/java/com/grubhub/features/subscriptions/analytics/installers/SubscriptionAnalyticsCSHandlerInstaller.kt",
+  "label": "block"
+ },
+ {
+  "id": 57,
+  "cwd": "/Users/illiabilan/StudioProjects/pi-plugins",
+  "cmd": "git commit -m \"Reorganize structure: move code-search and active-subagents-widget to extensions/, remove test-extraction.mjs, update README\"",
+  "label": "block"
+ },
+ {
+  "id": 58,
+  "cwd": "/Users/illiabilan/StudioProjects/diner-android",
+  "cmd": "cd /Users/illiabilan/StudioProjects/diner-android && git push -u origin ib/ada-48913-upsell-telemetry 2>&1",
+  "label": "block"
+ },
+ {
+  "id": 59,
+  "cwd": "/private/tmp/ghx-bench/wr",
+  "cmd": "which gh",
+  "label": "block"
+ },
+ {
+  "id": 60,
+  "cwd": "/Users/illiabilan/StudioProjects/pi-plugins",
+  "cmd": "which pi",
+  "label": "block"
+ },
+ {
+  "id": 61,
+  "cwd": "/Users/illiabilan/.pi",
+  "cmd": "cd /Users/illiabilan && which grep",
+  "label": "block"
+ },
+ {
+  "id": 62,
+  "cwd": "/Users/illiabilan/StudioProjects/pi-plugins",
+  "cmd": "rm -rf /tmp/source-verify",
+  "label": "block"
+ },
+ {
+  "id": 63,
+  "cwd": "/Users/illiabilan/StudioProjects/pi-plugins",
+  "cmd": "rm -rf /tmp/final-verify",
+  "label": "block"
+ },
+ {
+  "id": 64,
+  "cwd": "/Users/illiabilan/StudioProjects/pi-plugins",
+  "cmd": "mkdir -p ~/.pi/agent/skills/pi-extension-builder",
+  "label": "block"
+ },
+ {
+  "id": 65,
+  "cwd": "/Users/illiabilan/StudioProjects/pi-plugins",
+  "cmd": "rm -rf /tmp/builder-test",
+  "label": "block"
+ },
+ {
+  "id": 66,
+  "cwd": "/Users/illiabilan/StudioProjects/pi-plugins",
+  "cmd": "rm -rf /tmp/kt-e2e /tmp/kt_out.log",
+  "label": "block"
+ },
+ {
+  "id": 67,
+  "cwd": "/Users/illiabilan/StudioProjects/pi-plugins",
+  "cmd": "rm -rf /tmp/pi-install-check /tmp/install_check.log",
+  "label": "block"
+ },
+ {
+  "id": 68,
+  "cwd": "/Users/illiabilan/.pi",
+  "cmd": "chmod +x /Users/illiabilan/.pi/agent/extensions/bash-grep/bash-grep.ts",
+  "label": "block"
+ },
+ {
+  "id": 69,
+  "cwd": "/Users/illiabilan/StudioProjects/pi-plugins",
+  "cmd": "mkdir -p ~/.pi/agent/skills/pi-agent-builder",
+  "label": "block"
+ },
+ {
+  "id": 70,
+  "cwd": "/Users/illiabilan/StudioProjects/diner-android",
+  "cmd": "wc -l ./data/repository/src/test/java/com/grubhub/dinerapp/data/repository/payments/CreditRepositoryTest.kt",
+  "label": "block"
+ },
+ {
+  "id": 71,
+  "cwd": "/private/tmp/diffx-bench/case1",
+  "cmd": "wc -l v1.kt v2.kt",
+  "label": "block"
+ },
+ {
+  "id": 72,
+  "cwd": "/private/tmp/pitrace-bench1",
+  "cmd": "wc -l \"/Users/illiabilan/.pi/agent/sessions/--Users-illiabilan-StudioProjects-pi-plugins--/2026-08-06T11-49-59-939Z_019fd6e8-aa03-743e-8ae3-8ca0ff1c239d.jsonl\"",
+  "label": "block"
+ },
+ {
+  "id": 73,
+  "cwd": "/private/tmp/diffx-bench/case1",
+  "cmd": "cd /private/tmp/diffx-bench/case1 && diff -u v1.kt v2.kt",
+  "label": "block"
+ },
+ {
+  "id": 74,
+  "cwd": "/Users/illiabilan/StudioProjects/pi-plugins",
+  "cmd": "cd /Users/illiabilan/StudioProjects/pi-plugins/code-search && npm install 2>&1",
+  "label": "block"
+ },
+ {
+  "id": 75,
+  "cwd": "/Users/illiabilan/StudioProjects/pi-plugins",
+  "cmd": "ls -d .pi/agents .pi/extensions .pi/skills .pi/tools 2>/dev/null || echo \"None found\"",
+  "label": "allow"
+ },
+ {
+  "id": 76,
+  "cwd": "/Users/illiabilan/StudioProjects/busboy",
+  "cmd": "cd /Users/illiabilan/StudioProjects/busboy && find . -name \"*.py\" -type f -not -path \"*/node_modules/*\" | wc -l",
+  "label": "block"
+ },
+ {
+  "id": 77,
+  "cwd": "/Users/illiabilan/StudioProjects/pi-plugins",
+  "cmd": "find ~/.pi/agent -name \"*.json*\" -maxdepth 3 | head -20",
+  "label": "block"
+ },
+ {
+  "id": 78,
+  "cwd": "/Users/illiabilan/StudioProjects/pi-plugins",
+  "cmd": "ls ~/.pi/agent/agents/ 2>/dev/null; ls .pi/agents 2>/dev/null",
+  "label": "nudge"
+ },
+ {
+  "id": 79,
+  "cwd": "/private/tmp/diffx-bench/case1",
+  "cmd": "ls -la /private/tmp/diffx-bench/case1 && wc -l /private/tmp/diffx-bench/case1/*.kt",
+  "label": "nudge"
+ },
+ {
+  "id": 80,
+  "cwd": "/Users/illiabilan/StudioProjects/diner/diner-android",
+  "cmd": "find . -name \"*.kt\" -o -name \"*.java\" | grep -v \"build/\" | grep -v \"generated/\" | head -30",
+  "label": "nudge"
+ },
+ {
+  "id": 81,
+  "cwd": "/Users/illiabilan/StudioProjects/diner/diner-android",
+  "cmd": "find . -name \"*.kt\" -o -name \"*.java\" | head -20",
+  "label": "block"
+ },
+ {
+  "id": 82,
+  "cwd": "/Users/illiabilan/StudioProjects/pi-plugins",
+  "cmd": "cd /Users/illiabilan/StudioProjects/pi-plugins/extensions/code_viewer && ls -la && cat package.json",
+  "label": "nudge"
+ },
+ {
+  "id": 83,
+  "cwd": "/private/tmp/gradlex-synth/big",
+  "cmd": "ls features | head; echo ---; ls features/mod000 2>/dev/null || ls features | tail -3",
+  "label": "allow"
+ },
+ {
+  "id": 84,
+  "cwd": "/Users/illiabilan/StudioProjects/diner/diner-android",
+  "cmd": "cd /Users/illiabilan/StudioProjects/diner/diner-android && grep -rn \"Werror\\|allWarningsAsErrors\" --include=*.gradle --include=*.kts --include=*.properties . 2>/dev/null | grep -v \"/build/\" | grep -v graphify-out | head -20",
+  "label": "nudge"
+ },
+ {
+  "id": 85,
+  "cwd": "/Users/illiabilan/StudioProjects/diner-android",
+  "cmd": "cd /Users/illiabilan/StudioProjects/diner-android && grep -rln \"getSubscriptionPlacementUseCase.build\\|SubscriptionUpsellClickEvent(\\|SubscriptionUpsellModuleVisibleWithVarsEvent(\" --include=*.kt . | grep -v /build/ | grep -v /test/",
+  "label": "nudge"
+ },
+ {
+  "id": 86,
+  "cwd": "/Users/illiabilan/StudioProjects/diner-android",
+  "cmd": "grep -n \"handleEvent\" -A 30 /Users/illiabilan/StudioProjects/diner-android/app/src/main/java/com/grubhub/dinerapp/android/order/cart/checkout/credits/split/presentation/CreditSplitActivity.kt",
+  "label": "block"
+ },
+ {
+  "id": 87,
+  "cwd": "/Users/illiabilan/StudioProjects/diner-android",
+  "cmd": "cd /Users/illiabilan/StudioProjects/diner-android && grep -rl \"OrderHistoryRepository\" --include=*.kt --include=*.java -l | grep -v /test/ | grep -v Test.kt | grep -v Test.java",
+  "label": "nudge"
+ },
+ {
+  "id": 88,
+  "cwd": "/Users/illiabilan/.pi",
+  "cmd": "cd /opt/homebrew/lib/node_modules/@earendil-works/pi-coding-agent/dist/core/extensions && grep -n \"ts\\b\\|typescript\\|import(\\|execArgv\\|spawn\" runner.js loader.js | head -25",
+  "label": "nudge"
+ },
+ {
+  "id": 89,
+  "cwd": "/Users/illiabilan/StudioProjects/pi-plugins",
+  "cmd": "cd ~/StudioProjects/diner-android/\necho \"--- grep for bare name across kt+java (realistic 'find the definition' attempt) ---\"\ngrep -rn \"\\bPaymentMethodViewModel\\b\" --include=\"*.kt\" --include=\"*.java\" . 2>/dev/null | grep -v \"/build/\"",
+  "label": "nudge"
+ },
+ {
+  "id": 90,
+  "cwd": "/Users/illiabilan/StudioProjects/busboy",
+  "cmd": "cd /Users/illiabilan/StudioProjects/busboy && grep -rn \"account_settings\" bb/src/lib/util/datadog.py bb/src/tasks/datadog/ensure_rum_custom_metric.py bb/tests/tasks/datadog/test_ensure_rum_custom_metric.py bb/tests/lib/util/test_datadog.py 2>/dev/null; echo \"---repo wide---\"; grep -rln \"account_settings\" . 2>/dev/null",
+  "label": "nudge"
+ },
+ {
+  "id": 91,
+  "cwd": "/Users/illiabilan/StudioProjects/diner/diner-android",
+  "cmd": "cd ~/StudioProjects/diner/diner-android && grep -rn \"taplytics\" --include=\"*.gradle\" --include=\"*.kts\" --include=\"*.toml\" . 2>/dev/null | grep -v build/ | head; find . -name \"*.aar\" -not -path \"*/build/*\" | head",
+  "label": "nudge"
+ },
+ {
+  "id": 92,
+  "cwd": "/Users/illiabilan/StudioProjects/diner",
+  "cmd": "cd /Users/illiabilan/StudioProjects/diner/diner-android && grep -n \"AccountUrgencyPeriod\" -A25 features/subscriptions/src/main/java/com/grubhub/features/subscriptions/analytics/installers/SubscriptionAccountSavingsCSHandlerInstaller.kt | sed -n 1,80p; grep -rn \"AccountUrgencyPeriodViewedEvent\\|AccountUrgencyPeriodClickEvent\" --include=\"*.kt\" features/subscriptions/src/main/java/com/grubhub/features/subscriptions/analytics/SubscriptionEvents.kt -A12",
+  "label": "nudge"
+ },
+ {
+  "id": 93,
+  "cwd": "/Users/illiabilan/StudioProjects/pi-plugins",
+  "cmd": "grep \"AgentMessage\" /opt/homebrew/lib/node_modules/@earendil-works/pi-coding-agent/dist/core/messages.d.ts | head -5\n# also check what package exports AgentMessage \ngrep \"AgentMessage\" /opt/homebrew/lib/node_modules/@earendil-works/pi-coding-agent/dist/index.d.ts",
+  "label": "nudge"
+ },
+ {
+  "id": 94,
+  "cwd": "/Users/illiabilan/StudioProjects/diner",
+  "cmd": "cd /Users/illiabilan/StudioProjects/diner/diner-android && sed -n 640,680p features/subscriptions/src/main/java/com/grubhub/features/subscriptions/analytics/SubscriptionEvents.kt && echo ==INSTALLER== && grep -n \"getVars\\|AccountUrgencyPeriodEvent\" -A20 features/subscriptions/src/main/java/com/grubhub/features/subscriptions/analytics/installers/SubscriptionAccountSavingsCSHandlerInstaller.kt | sed -n '1,40p;/AccountUrgencyPeriodEvent.getVars/,+25p' && echo ==UC== && cat features/subscriptions/src/main/java/com/grubhub/features/subscriptions/domain/usecase/GetAccountSubscriptionUrgencyPeriodUseCase.kt features/subscriptions/src/main/java/com/grubhub/features/subscriptions/domain/usecase/GetAccountNonMemberSavingsUseCase.kt",
+  "label": "nudge"
+ },
+ {
+  "id": 95,
+  "cwd": "/Users/illiabilan/StudioProjects/busboy",
+  "cmd": "python3 -c \"\nfrom datadog_api_client.v2.model.rum_metric_event_type import RumMetricEventType\nprint(RumMetricEventType.allowed_values)\n\" 2>&1 | tail -5\nfind / -iname \"rum_metric_event_type.py\" 2>/dev/null | head -5",
+  "label": "allow"
+ },
+ {
+  "id": 96,
+  "cwd": "/Users/illiabilan/StudioProjects/personal",
+  "cmd": "head -3 Individual.csv; echo \"---\"; wc -l Firm.csv Individual.csv; echo \"---\"; file Firm.csv Individual.csv",
+  "label": "nudge"
+ },
+ {
+  "id": 97,
+  "cwd": "/Users/illiabilan/StudioProjects/pi-plugins",
+  "cmd": "cd /tmp/mfrbench && head -c 600 sonc_1.json; echo; python3 -c \"\nimport json\nts=set()\nfor line in open('sonc_1.json'):\n    try: ev=json.loads(line)\n    except: continue\n    ts.add(ev.get('type'))\nprint(ts)\"",
+  "label": "allow"
+ },
+ {
+  "id": 98,
+  "cwd": "/private/tmp/nodex-bench/ext",
+  "cmd": "head -60 index.ts; echo \"...\"; wc -l index.ts",
+  "label": "nudge"
+ },
+ {
+  "id": 99,
+  "cwd": "/Users/illiabilan/StudioProjects/pi-plugins",
+  "cmd": "cat /opt/homebrew/lib/node_modules/@earendil-works/pi-coding-agent/docs/skills.md 2>&1 | sed -n '150,260p'",
+  "label": "nudge"
+ },
+ {
+  "id": 100,
+  "cwd": "/Users/illiabilan/StudioProjects/diner-android",
+  "cmd": "cd /Users/illiabilan/StudioProjects/diner-android && git show 473d7d53a33 --stat --format=\"%s\" | head -30",
+  "label": "nudge"
+ },
+ {
+  "id": 101,
+  "cwd": "/Users/illiabilan/StudioProjects/pi-plugins",
+  "cmd": "git branch -M main",
+  "label": "allow"
+ },
+ {
+  "id": 102,
+  "cwd": "/Users/illiabilan/StudioProjects/pi-plugins",
+  "cmd": "git remote add origin git@github.com:illiabilan/ib-pi-plugins.git",
+  "label": "allow"
+ },
+ {
+  "id": 103,
+  "cwd": "/Users/illiabilan/StudioProjects/diner/diner-android",
+  "cmd": "cd /Users/illiabilan/StudioProjects/diner/diner-android && gh repo view --json defaultBranchRef -q .defaultBranchRef.name && git branch -r | head -5 && git log --oneline -1 origin/HEAD 2>/dev/null; git merge-base --is-ancestor origin/develop HEAD 2>/dev/null && echo \"develop is ancestor\"",
+  "label": "nudge"
+ },
+ {
+  "id": 104,
+  "cwd": "/Users/illiabilan/StudioProjects/diner",
+  "cmd": "cd /Users/illiabilan/StudioProjects/diner/diner-android && ./gradlew :features:ppx-shared:ktlintMainSourceSetCheck 2>&1 | grep -E \"\\.kt|Lint error|BUILD\" | head -20",
+  "label": "nudge"
+ },
+ {
+  "id": 105,
+  "cwd": "/Users/illiabilan/StudioProjects/diner",
+  "cmd": "cd /Users/illiabilan/StudioProjects/diner/diner-android && ./gradlew :features:subscriptions:testGrubhubReleaseUnitTest 2>&1 | grep -E \"FAILED|BUILD\" | head",
+  "label": "nudge"
+ },
+ {
+  "id": 106,
+  "cwd": "/Users/illiabilan/StudioProjects/diner/diner-android",
+  "cmd": "cd /Users/illiabilan/StudioProjects/diner/diner-android && ./gradlew :features:subscriptions:testGrubhubReleaseUnitTest --tests \"*UserSubscription*\" 2>&1 | grep -E \"^e: |FAILED|BUILD|tests? completed\" | head -20",
+  "label": "nudge"
+ },
+ {
+  "id": 107,
+  "cwd": "/Users/illiabilan/StudioProjects/pi-plugins",
+  "cmd": "which pi 2>&1; pi --version 2>&1 | head -5",
+  "label": "nudge"
+ },
+ {
+  "id": 108,
+  "cwd": "/private/tmp/arcx-h",
+  "cmd": "which javap; javap -version 2>&1 | head -2",
+  "label": "nudge"
+ },
+ {
+  "id": 109,
+  "cwd": "/Users/illiabilan/StudioProjects/diner-android",
+  "cmd": "cd /Users/illiabilan/StudioProjects/diner-android && wc -l .agents/rules/*.md && echo ==== && cat .agents/skills/analytics-integration/SKILL.md | head -120",
+  "label": "nudge"
+ },
+ {
+  "id": 110,
+  "cwd": "/Users/illiabilan/StudioProjects/diner-android",
+  "cmd": "cd /Users/illiabilan/StudioProjects/diner-android/features/subscriptions/src/test/java/com/grubhub/features/subscriptions && tail -20 presentation/interstitial3/GhPlusWelcomeViewModelTest.kt",
+  "label": "nudge"
+ },
+ {
+  "id": 111,
+  "cwd": "/Users/illiabilan/StudioProjects/diner/diner-android",
+  "cmd": "cd /Users/illiabilan/StudioProjects/diner/diner-android; rm -rf .gradle/configuration-cache && git push -u origin HEAD 2>&1 | grep -iE \"FAILED|error|remote:|branch|What went wrong\" -A2 | head -30",
+  "label": "nudge"
+ },
+ {
+  "id": 112,
+  "cwd": "/Users/illiabilan/StudioProjects/pi-plugins",
+  "cmd": "cd /tmp\nnode -e '\nconst fs = require(\"fs\");\nfunction analyze(file, label) {\n  const lines = fs.readFileSync(file, \"utf-8\").split(\"\\n\").filter(Boolean);\n  let cacheWriteSum = 0, outputSum = 0, inputSum = 0, calls = 0;\n  for (const line of lines) {\n    let obj; try { obj = JSON.parse(line); } catch { continue; }\n    if (obj.type === \"turn_end\" && obj.message?.usage) {\n      const u = obj.message.usage;\n      cacheWriteSum += u.cacheWrite || 0; outputSum += u.output || 0; inputSum += u.input || 0; calls++;\n    }\n  }\n  console.log(label, { calls, newTokens: inputSum + outputSum + cacheWriteSum });\n}\nanalyze(\"teach2.log\", \"second run (cache warm):\");\n'\nrm -f teach2.log",
+  "label": "allow"
+ },
+ {
+  "id": 113,
+  "cwd": "/Users/illiabilan/StudioProjects/diner/diner-android",
+  "cmd": "cd /tmp/sdkscan\njavap -p -c ex_dd-sdk-android-core-3.1.0.aar/cls/com/datadog/android/core/internal/thread/ThreadExtKt.class 2>/dev/null | head -60",
+  "label": "nudge"
+ },
+ {
+  "id": 114,
+  "cwd": "/private/tmp/arcx-h",
+  "cmd": "cd /tmp/aarx && echo \"== all members (incl. private) mentioning NightMode ==\" && javap -p -cp classes.jar androidx.appcompat.app.AppCompatDelegate | grep -i nightmode; echo \"== nested @NightMode ==\" && javap -cp classes.jar 'androidx.appcompat.app.AppCompatDelegate$NightMode'",
+  "label": "nudge"
+ },
+ {
+  "id": 115,
+  "cwd": "/Users/illiabilan/StudioProjects/pi-plugins",
+  "cmd": "for i in 1 2 3 4 5; do\n  (cd /tmp/cw-trial-$i && pi -p 'Use the subagent tool to run \"code_writer\" with this task: \"Make the calculator module better and add proper error handling.\" Report exactly what it did.' > /tmp/cw-trial-$i/output.log 2>&1) &\ndone\nwait\necho \"all 5 trials finished\"",
+  "label": "allow"
+ },
+ {
+  "id": 116,
+  "cwd": "/Users/illiabilan/StudioProjects/pi-plugins",
+  "cmd": "cd ~/StudioProjects/diner-android/\necho \"--- WITH code_search ---\"\npi --mode json -p \"Find the interface definition (not the implementation class, not usages/imports/mocks) of OrderHistoryRepository. Give me its exact file path and line number.\" > /tmp/repo1.log 2>&1 &\nP1=$!\necho \"--- WITHOUT code_search ---\"\npi --mode json --exclude-tools code_search -p \"Find the interface definition (not the implementation class, not usages/imports/mocks) of OrderHistoryRepository. Give me its exact file path and line number.\" > /tmp/repo2.log 2>&1 &\nP2=$!\nwait $P1 $P2\necho \"both done\"",
+  "label": "allow"
+ },
+ {
+  "id": 117,
+  "cwd": "/private/tmp/diffx-bench/case1",
+  "cmd": "cd /private/tmp/diffx-bench/case1 && diff v1.kt v2.kt | grep -c '^[<>]' ; echo \"--- hunk count ---\"; diff -u v1.kt v2.kt | grep -c '^@@'",
+  "label": "nudge"
+ },
+ {
+  "id": 118,
+  "cwd": "/private/tmp/diffx-bench/case3",
+  "cmd": "cd /private/tmp/diffx-bench/case3 && diff -rq a b",
+  "label": "block"
+ },
+ {
+  "id": 119,
+  "cwd": "/Users/illiabilan/StudioProjects/pi-plugins",
+  "cmd": "cat > /tmp/toolbuild/launch.sh <<'SH'\n#!/bin/bash\n# usage: launch.sh <task-name>...\nSYS=/tmp/toolbuild/pi-builder-system.md\nREPO=/Users/illiabilan/StudioProjects/pi-plugins\nmkdir -p /tmp/toolbuild/logs\nfor name in \"$@\"; do\n  TASK=$(cat \"/tmp/toolbuild/tasks/$name.md\")\n  cd \"$REPO\"\n  nohup pi --mode json -p --no-session --append-system-prompt \"$SYS\" \"Task: $TASK\" \\\n    > \"/tmp/toolbuild/logs/$name.jsonl\" 2> \"/tmp/toolbuild/logs/$name.err\" &\n  echo \"$! $name\" >> /tmp/toolbuild/pids.txt\n  echo \"started $name pid=$!\"\n  sleep 2\ndone\nSH\nchmod +x /tmp/toolbuild/launch.sh\nrm -f /tmp/toolbuild/pids.txt\n/tmp/toolbuild/launch.sh grep-plus list-files git gradle-build file-ops\nsleep 45\nfor f in /tmp/toolbuild/logs/*.jsonl; do echo \"=== $f $(wc -c < $f) bytes\"; done; echo; tail -c 300 /tmp/toolbuild/logs/git.err 2>/dev/null",
+  "label": "nudge"
+ },
+ {
+  "id": 120,
+  "cwd": "/Users/illiabilan/StudioProjects/pi-plugins",
+  "cmd": "cat > /tmp/toolbuild/mon.py <<'PY'\nimport json,glob,os,sys,time\nrows=[]\nfor f in sorted(glob.glob('/tmp/toolbuild/logs/*.jsonl')):\n    name=os.path.basename(f)[:-6]\n    tools=[];done=False;turns=0;inp=out=cr=cw=0;last='';err=''\n    for line in open(f,errors='replace'):\n        try: e=json.loads(line)\n        except: continue\n        t=e.get('type')\n        if t=='tool_execution_start': tools.append(e.get('toolName'))\n        if t=='agent_end': done=True\n        if t=='message_end':\n            m=e.get('message',{})\n            if m.get('role')=='assistant':\n                turns+=1\n                u=m.get('usage') or {}\n                inp+=u.get('input',0);out+=u.get('output',0);cr+=u.get('cacheRead',0);cw+=u.get('cacheWrite',0)\n                for p in m.get('content',[]):\n                    if p.get('type')=='text' and p.get('text','').strip(): last=p['text'].strip()[-160:]\n    alive=os.system(f\"pgrep -f 'tasks/{name}' >/dev/null 2>&1\")==0\n    rows.append((name,done,turns,len(tools),tools[-3:],inp+out+cr+cw,last))\nprint(f\"{'agent':16}{'done':6}{'turns':6}{'tools':6}  {'tok(k)':8} last tools / tail\")\nfor n,d,t,tc,lt,tok,last in rows:\n    print(f\"{n:16}{'YES' if d else '-':6}{t:<6}{tc:<6}  {tok//1000:<8} {','.join(str(x) for x in lt)}\")\n    if last: print(f\"    ...{last[:150]}\")\nPY\npython3 /tmp/toolbuild/mon.py",
+  "label": "nudge"
+ },
+ {
+  "id": 121,
+  "cwd": "/Users/illiabilan/StudioProjects/pi-plugins",
+  "cmd": "cd /Users/illiabilan/StudioProjects/pi-plugins/code-search && npm install 2>&1 | tail -5",
+  "label": "nudge"
+ },
+ {
+  "id": 122,
+  "cwd": "/Users/illiabilan/StudioProjects/pi-plugins",
+  "cmd": "cd /Users/illiabilan/StudioProjects/pi-plugins/extensions/multi-file-read && npx tsc --noEmit --target es2022 --module esnext --moduleResolution bundler --skipLibCheck --esModuleInterop --allowImportingTsExtensions index.ts 2>&1 | head",
+  "label": "nudge"
+ },
+ {
+  "id": 123,
+  "cwd": "/Users/illiabilan/StudioProjects/pi-plugins",
+  "cmd": "cd /tmp/accuracy-test\npi -p \"1. Call code_search for query 'brandNew'. 2. Then use the write tool to append this to example.ts: 'export function brandNewFunction() { return 1; }'. 3. Immediately call code_search for query 'brandNew' again without running /code-index. Report both raw results verbatim.\" 2>&1 | tail -40",
+  "label": "nudge"
+ },
+ {
+  "id": 124,
+  "cwd": "/Users/illiabilan/StudioProjects/pi-plugins",
+  "cmd": "pi --list-models 2>&1 | grep -i \"sonnet\"",
+  "label": "allow"
+ },
+ {
+  "id": 125,
+  "cwd": "/private/tmp/nodex-bench/ext",
+  "cmd": "cd /tmp/nodex-bench/ext && echo \"=== index.ts 360-380 ===\"; sed -n '360,380p' index.ts | cat -n | awk '{printf \"%d\\t%s\\n\", $1+359, substr($0, index($0,$2))}'; echo; echo \"=== index.ts 468-480 ===\"; sed -n '468,480p' index.ts | cat -n | awk '{printf \"%d\\t%s\\n\", $1+467, substr($0, index($0,$2))}'",
+  "label": "allow"
+ },
+ {
+  "id": 126,
+  "cwd": "/Users/illiabilan/StudioProjects/pi-plugins",
+  "cmd": "cd /Users/illiabilan/StudioProjects/pi-plugins/extensions && for d in grep list-files git gradle-build file-ops process pi-trace node-project diff path-stats file-write-plus gh archive-inspect env-info; do deps=$(python3 -c \"import json;d=json.load(open('$d/package.json'));print(json.dumps(d.get('dependencies',{})))\" 2>/dev/null); printf \"%-17s deps=%s\\n\" \"$d\" \"$deps\"; done",
+  "label": "allow"
+ },
+ {
+  "id": 127,
+  "cwd": "/Users/illiabilan/StudioProjects/pi-plugins",
+  "cmd": "cd ~/StudioProjects/diner-android/ && pi --mode json -p \"Find where the class PaymentMethodViewModel is actually DEFINED (its declaration, not constructor calls, not field references, not comments mentioning it, not its inner classes/interfaces). Give exact file and line.\" > /tmp/teach2.log 2>&1\necho \"exit code: $?\"\nls -la /tmp/teach2.log",
+  "label": "allow"
+ },
+ {
+  "id": 128,
+  "cwd": "/Users/illiabilan/StudioProjects/busboy",
+  "cmd": "cd /Users/illiabilan/StudioProjects/busboy && grep -rln \"run-bb\\|bb-task\\|bb_task\\|BB_COMMAND\\|job/bb\" . --include=\"*.md\" --include=\"*.yaml\" --include=\"*.yml\" 2>/dev/null | head -20\necho \"---\"\ngrep -rn \"jenkins\" bb/README.md\necho \"---check bin/bb---\"\nfind . -name \"bb\" -path \"*bin*\"\ncat bb/bin/bb 2>/dev/null | head -30\n",
+  "label": "nudge"
+ },
+ {
+  "id": 129,
+  "cwd": "/Users/illiabilan/StudioProjects/pi-plugins",
+  "cmd": "cd /tmp/grep_validate/runs\nnode /Users/illiabilan/.pi/agent/skills/agentic-tool-validation-loop/scripts/analyze-trace.js new_4_varied.jsonl > new_4_varied.analysis.txt 2>&1\ngrep -A20 \"Tool calls\" new_4_varied.analysis.txt | head -25",
+  "label": "allow"
+ },
+ {
+  "id": 130,
+  "cwd": "/Users/illiabilan/StudioProjects/pi-plugins",
+  "cmd": "node -e '\nfunction humpInitials(name) {\n  const humps = name.match(/[A-Z]+(?![a-z])|[A-Z][a-z0-9]*|[a-z0-9]+/g) ?? [name];\n  return humps.map((h) => h[0]).join(\"\").toLowerCase();\n}\nfunction isSubsequence(text, query) {\n  let p = 0;\n  for (let i = 0; i < text.length && p < query.length; i++) { if (text[i] === query[p]) p++; }\n  return p === query.length;\n}\nconst tests = [\"handleEvent\", \"TrackOrderViewModel\", \"handle_click_event\", \"whenOnCreate_sendsTimePickerModuleVisibleEvent\", \"handleGTMEvents\", \"handleSmsEvent\"];\nfor (const t of tests) console.log(t, \"->\", humpInitials(t));\nconsole.log();\nconsole.log(\"query he vs handleEvent humps:\", isSubsequence(humpInitials(\"handleEvent\"), \"he\"));\nconsole.log(\"query handleevent (full) vs whenOnCreate... humps:\", isSubsequence(humpInitials(\"whenOnCreate_sendsTimePickerModuleVisibleEvent\"), \"handleevent\"));\nconsole.log(\"query handleevent vs handleGTMEvents humps:\", isSubsequence(humpInitials(\"handleGTMEvents\"), \"handleevent\"));\n'\n",
+  "label": "allow"
+ },
+ {
+  "id": 131,
+  "cwd": "/Users/illiabilan/StudioProjects/diner/diner-android",
+  "cmd": "cd /Users/illiabilan/StudioProjects/diner/diner-android && mkdir -p .personal/sessions/ADA-48951 && cat >> .personal/sessions/ADA-48951/03_execution_log.txt <<'EOF'\n[ADA-48951] branch ib/ada-48951-user-subscription-facade off origin/integration\nPhase 1 (contract): features/subscriptions-api: UserSubscriptionFacade.kt, model/UserSubscription.kt, model/SubscriptionCashback.kt\nPhase 2 (impl): features/subscriptions v2/user: UserSubscriptionMapper.kt, UserSubscriptionFacadeImpl.kt, di/UserSubscriptionModule.kt; app SubscriptionsCompoundModule.kt += UserSubscriptionModule\nPhase 3 (tests): UserSubscriptionMapperTest.kt, UserSubscriptionFacadeImplTest.kt\nEOF\n./gradlew :features:subscriptions:testGrubhubStagingUnitTest --tests \"*UserSubscription*\" 2>&1 | tail -40",
+  "label": "nudge"
+ },
+ {
+  "id": 132,
+  "cwd": "/Users/illiabilan/StudioProjects/personal",
+  "cmd": "cd /Users/illiabilan/StudioProjects/personal && python3 - <<'PY'\nexec(open('/tmp/pat3.py',encoding='utf-8').read().split('def block')[0])\nimport collections,datetime\n# нормалізація: скільки календарних днів реально попало в кожне вікно\nalld=[T[0]['dt']+datetime.timedelta(i) for i in range((T[-1]['dt']-T[0]['dt']).days+1)]\ncnt=collections.Counter()\nfor d in alld:\n    p=[x for x in INC if x<=d]\n    if p: cnt[min((d-p[-1]).days//3*3,27)]+=1\nfor lbl,rows in [(\"ДИСКРЕЦІЙНІ\",D),(\"ОБОВ'ЯЗКОВІ\",F)]:\n    b=collections.Counter()\n    for t in rows:\n        p=[x for x in INC if x<=t['dt']]\n        if p: b[min((t['dt']-p[-1]).days//3*3,27)]+=t['pln']\n    print(f\"\\n=== {lbl}: PLN на один календарний день вікна ===\")\n    mx=max(b[k]/cnt[k] for k in b)\n    for k in sorted(b):\n        v=b[k]/cnt[k]\n        print(f\"  день {k:>2}-{k+2:<2}  {v:>6,.0f} PLN/день  (сума {b[k]:>8,.0f} / {cnt[k]:>3} днів)  {'#'*int(v/mx*50)}\")\n    avg=sum(b.values())/sum(cnt[k] for k in b)\n    print(f\"  середнє по циклу: {avg:,.0f} PLN/день\")\nPY",
+  "label": "allow"
+ },
+ {
+  "id": 133,
+  "cwd": "/Users/illiabilan/StudioProjects/personal",
+  "cmd": "cd /Users/illiabilan/StudioProjects/personal && cat > /tmp/cat.py <<'EOF'\nexec(open('/tmp/eng.py').read())\nimport collections, re\nEO=[r for r in ROWS if r['side']=='out' and not r['internal']]\nEI=[r for r in ROWS if r['side']=='in'  and not r['internal']]\nRULES=[\n ('Taxes ZUS/US',      ['URZĄD SKARBOWY','ZUS','PRZELEW DO US','KRUS']),\n ('Rent',              ['GIEZEK','GIEZYK']),\n ('Utilities/city',    ['GMINA WROC','ZARZĄD DRÓG','MPWIK','TAURON','FORTUM','PGNIG']),\n ('Telecom/Internet',  ['ORANGE','PLAY','T-MOBILE','NETIA','VECTRA','PLUS ']),\n ('Insurance',         ['RANKOMAT','PZU','WARTA','LINK4','ALLIANZ','AXA','GENERALI']),\n ('Groceries',         ['AUCHAN','CARREFOUR','ZABKA','ŻABKA','BIEDRONKA','LIDL','MERCADONA','KAUFLAND','ALDI','NETTO','DINO','STOKROTKA','SPOŁEM','PIEKARNIA','MARKET','SPAR','CONSUM','DIA ']),\n ('Eating out/cafe',   ['RESTAURA','PIZZA','SUSHI','KFC','MCDONALD','BURGER','STARBUCKS','COSTA','CAFE','KAWA','BISTRO','KEBAB','BAR ','PUB ','GLOVO','UBER EATS','PYSZNE','BOLT FOOD','WOLT','CUKIERNIA','LODY','GELAT','THAI','RAMEN','PHO ','SALAD','ZHAKOWANI','JAKUBEK','BUFET','FOOD']),\n ('Pharmacy/health',   ['APTEKA','DR MAX','LEKARZ','MEDIC','DENT','CLINIC','KLINIK','LUXMED','MEDICOVER','ZDROW','OPTY','LABORAT','DIAGNOST']),\n ('Pets',              ['MAXI ZOO','ZOO ','KAKADU','ZOOLOG','WETERYN','VET ']),\n ('Fuel/transport',    ['BP-','ORLEN','SHELL','CIRCLE K','LOTOS','ESTACION','MOYA','AMIC','BOLT','UBER','FREENOW','MPK','KOLEJE','PKP','INTERCITY','FLIXBUS','PARK','AUTOSTRAD','VIATOLL','E-TOLL','CARSHARING','PANEK','TRAF']),\n ('Travel/holidays',   ['RYANAIR','WIZZ','LOT ','AIRBNB','BOOKING','RENTALCARS','HOTEL','HOSTEL','AIRPORT','LOTNISKO','EASYJET','TRIP','ESKY','ITAKA','TUI']),\n ('Online/marketplace',['ALLEGRO','AMAZON','ALIEXPRESS','TEMU','SHEIN','OLX','EMPIK','MEDIA EXPERT','MEDIAMARKT','RTV EURO','X-KOM','MORELE','PCCOMPONENTES','KOMPUTRON','IKEA','LEROY','CASTORAMA','OBI ','ACTION','PEPCO','KIK ','SINSAY','RESERVED','ZARA','H&M','CCC','DEICHMANN','ROSSMANN','HEBE','SUPER-PHARM','DOUGLAS','NOTINO','ZALANDO','MODIVO','DECATHLON','CENTRUM ROWER','DPD','INPOST','POCZTA','PACZKO']),\n ('Digital/subs',      ['PAYPAL','GOOGLE','APPLE','SPOTIFY','NETFLIX','YOUTUBE','OPENAI','ANTHROPIC','CLAUDE','MICROSOFT','ADOBE','GITHUB','JETBRAINS','FIGMA','NOTION','DROPBOX','ICLOUD','STEAM','PLAYSTATION','CURSOR','X CORP','TWITTER','LINKEDIN','META PLAT','FACEBOOK','TELEGRAM','PAYPRO','CLOUD','HOSTING','DOMAIN','OVH','GODADDY']),\n ('Family/UA transfers',['MONOBANK','MONO*','PRIVAT','UKRAIN','WIKTORIA','VIKTORIA','VIKTORIIA','SEVERINA','KORETSKA','YATSKEVYCH','OLHA','OLENA']),\n ('P2P/loans/other ppl',['SLAVA','SVIATOSLAV','KOSTENKO','KOSMACHEVSKYI','JAWORSKI','MATEUSZ','ANASTASI','BILAN']),\n ('Bank fees',         ['PROWIZJ','OPŁAT','PODATEK POBRANY','BANK PEKAO']),\n ('Cash withdrawal',   ['WYPŁATA']),\n]\ndef cat(r):\n    hay=(r['who']+' '+r['ttl']+' '+r['typ']).upper()\n    if r['typ'].startswith('WYPŁATA'): return 'Cash withdrawal'\n    if r['typ'] in ('PROWIZJA ZA PRZELEW','PROWIZJE AUT.','POBRANIE ZALEGŁEJ OPŁATY','PODATEK POBRANY'): return 'Bank fees'\n    for name,keys in RULES:\n        for k in keys:\n            if k in hay: return name\n    return 'Uncategorized'\nfor r in EO: r['cat']=cat(r)\nFIXED={'Taxes ZUS/US','Rent','Utilities/city','Telecom/Internet','Insurance'}\nEOF\npython3 -c \"\nexec(open('/tmp/cat.py').read())\ntot=sum(r['pln'] for r in EO)\nagg=collections.defaultdict(lambda:[0,0])\nfor r in EO: agg[r['cat']][0]+=r['pln']; agg[r['cat']][1]+=1\nprint(f'{\\\"CATEGORY\\\":<22}{\\\"YEAR PLN\\\":>11}{\\\"/MONTH\\\":>9}{\\\"%\\\":>7}   n')\nfor k,v in sorted(agg.items(),key=lambda x:x[1][0]):\n    print(f'{k:<22}{-v[0]:>11,.0f}{-v[0]/12:>9,.0f}{v[0]/tot*100:>6.1f}% {v[1]:>4}')\nprint(f'{\\\"TOTAL\\\":<22}{-tot:>11,.0f}{-tot/12:>9,.0f}')\nprint()\nunc=[r for r in EO if r['cat']=='Uncategorized']\nprint('uncategorized total',round(sum(r['pln'] for r in unc)),'n=',len(unc))\nagg2=collections.defaultdict(lambda:[0,0])\nfor r in unc: agg2[r['who'][:38] or r['ttl'][:38]][0]+=r['pln']; agg2[r['who'][:38] or r['ttl'][:38]][1]+=1\nfor k,v in sorted(agg2.items(),key=lambda x:x[1][0])[:30]: print(f'  {v[0]:>9,.0f} n={v[1]:<3} {k}')\n\"",
+  "label": "nudge"
+ },
+ {
+  "id": 134,
+  "cwd": "/private/tmp/nodex-bench/ext",
+  "cmd": "cd /tmp/nodex-bench/ext && ./node_modules/.bin/tsc --noEmit --strict --skipLibCheck --target es2022 --module esnext --moduleResolution bundler --pretty false index.ts 2>&1 | tee /tmp/tsc-out.txt | head -60; echo \"=== exit: ${PIPESTATUS[0]} ===\"; echo \"error lines: $(grep -c 'error TS' /tmp/tsc-out.txt)\"",
+  "label": "nudge"
+ },
+ {
+  "id": 135,
+  "cwd": "/Users/illiabilan/StudioProjects/diner-android",
+  "cmd": "cd /Users/illiabilan/StudioProjects/diner-android && python3 - <<'PY'\nimport re\np='features/subscriptions/src/test/java/com/grubhub/features/subscriptions/analytics/SubscriptionCelebrationInterstitialAnalyticsTest.kt'\ns=open(p).read()\n# drop the two celebration-error tests\nstart=s.index('    @Test\\n    fun `verify celebration copy missing telemetry for backend driven copy`')\nend=s.index('    private fun stubToggle(enabled: Boolean) {')\ns=s[:start]+s[end:]\ns=s.replace('import com.grubhub.features.subscriptions.domain.OfferedSubscriptionFactory\\n','')\n# unusable-copy tests now assert hasValidTexts=false is still reported\ns=s.replace('''    private fun verifyNoCelebrationShownEvent() {\n        verifyNoInteractions(performance)\n    }''','''    private fun verifyCelebrationShownEventWithInvalidTexts(variant: String, partner: String) {\n        verify(performance).logEvent(\n            \"subscription_celebration_shown\",\n            mapOf(\n                \"hasValidTexts\" to false,\n                \"variant\" to variant,\n                \"partner\" to partner,\n                \"BE_DRIVEN\" to false,\n                \"PLAN_NAME\" to \"\",\n                \"toggleEnabled\" to false\n            )\n        )\n    }''')\ns=s.replace('import org.mockito.kotlin.verifyNoInteractions\\n','')\nopen(p,'w').write(s)\nPY\ngrep -n \"verifyNoCelebrationShownEvent\\|fun \\`verify no telemetry\" features/subscriptions/src/test/java/com/grubhub/features/subscriptions/analytics/SubscriptionCelebrationInterstitialAnalyticsTest.kt",
+  "label": "allow"
+ },
+ {
+  "id": 136,
+  "cwd": "/Users/illiabilan/StudioProjects/personal",
+  "cmd": "cd /Users/illiabilan/StudioProjects/personal && python3 - <<'EOF'\nimport csv,collections,re\ndef num(s): return float(s.replace('\\u00a0','').replace(' ','').replace(',','.'))\nOWN={\"34124066701111001144609337\",\"40124066701787001144609379\",\"39124066701111001164932396\",\"78124066701787001164932426\",\"87124066701111001144609353\",\"28124066701111001164932400\",\"17124066701978001164932413\",\"76124066701978001144609366\"}\nR={'PLN':1,'USD':3.6049,'EUR':4.2608}\nrows=[]\nfor name in ['Firm.csv','Individual.csv']:\n    for r in csv.DictReader(open(name,encoding='utf-8'),delimiter=';'):\n        a=num(r['Kwota operacji'])\n        if a<0 and (r['Rachunek docelowy'] or '').lstrip(\"'\") not in OWN:\n            d=r['Data księgowania']\n            rows.append((d[6:]+'-'+d[3:5], -a*R[r['Waluta']], ' | '.join([r['Nadawca / Odbiorca'],r['Tytułem'],r['Typ operacji']])))\ndef grp(pat,label):\n    m=[x for x in rows if re.search(pat,x[2],re.I)]\n    tot=sum(x[1] for x in m); mo=len({x[0] for x in m})\n    print(f\"{label:<34} {tot:>10,.0f} PLN  {len(m):>4} txns  over {mo:>2} months  = {tot/max(mo,1):>7,.0f}/mo\")\n    return m\nprint(\"=== DISCRETIONARY DEEP DIVE ===\")\ngrp(r\"GLOVO|WOLT|UBER EATS|PYSZNE\",\"Food delivery\")\ngrp(r\"MCDONALD|\\bKFC\\b|RESTAUR|BISTRO|CHERRY RESTO|THAI|VIET|PHO |PIEROGARNIA|KUCHNIA|VAFFANAPOLI|MULTICOOK|MULTI COOK\",\"Restaurants/fast food\")\ngrp(r\"BAKERY|CUKIERNIA|KAWIARNIA|BOOKCAFE|GREEN CAFFE|PALOMA|LUCA|PAN\\.POT|PIEKARNIA|LEPIONE|WYPIEKARNIA|COFFEE\",\"Cafes & bakeries\")\ngrp(r\"ZABKA|DINO WROC|SALONIK|INMEDIO|DUZY BEN\",\"Convenience (Żabka etc)\")\ngrp(r\"AUCHAN|CARREFOUR|LIDL|KAUFLAND|BIEDRONK|JMP S\\.A\",\"Supermarkets\")\ngrp(r\"IQOS|SMOKE SHOP|EXPENDEDURIA|ESTANCO\",\"Tobacco/IQOS\")\ngrp(r\"MYJNIA|INWASH|JETWASH|LAVAD\",\"Car washes\")\ngrp(r\"PARKING|CAR PARK|CITY PARKING|CPG \",\"Parking\")\ngrp(r\"NETFLIX|OPENAI|CHATGPT|GOOGLE|YOUTUBE|JETBRAI|NAMECHE|UX PILOT|LIVECAREER|MEGOGO|VIRTSOF\",\"Subscriptions\")\ngrp(r\"ALLEGRO|TEMU|WHALECO|VINTED|ALIEXPRESS|FRUUGO|PCCOMPONENTES\",\"Marketplaces (goods)\")\ngrp(r\"PAYPAL|PAYPRO|PAYU\",\"Payment processors\")\ngrp(r\"LPP|ZARA|HM PL|PRIMARK|DEICHMANN|EOBUWIE|NORTH FACE|PEPCO|KIK|DOUGLAS|ROSSMANN\",\"Clothing & cosmetics\")\ngrp(r\"MEDIA MARKT|EURO-NET|KOMPRE|IKEA|AGATA|OBI|DECATHLON|CENTRUM ROWEROW|KODAK|ME M02\",\"Electronics/home/sport\")\ngrp(r\"RYANAIR|AIRBNB|BOOKING|HOTEL|RENTALCARS|FLIGHTS|NOVOTEL|IBIS\",\"Travel\")\ngrp(r\"MAXI ZOO|AQUAELZOO|WET\",\"Pets\")\ngrp(r\"AUTOPAY|KIDSVIEW|LOOPYS|DINO WORLD|DINOWORLD|DINOPARK|AQUALAND|MULTIKINO|FOX GAMES|ILUMINACJI|CASTING|GALAXY JUMP|JUGUETTOS|CHUBI|CITYFIT|SKY TOWER\",\"Kids/leisure\")\ngrp(r\"BP-|ORLEN|SHELL|CIRCLE K|AVIA|AMIC|MOL SP|ARAL|TAAS\",\"Fuel\")\ngrp(r\"MONOBANK|MONO\\*\",\"Monobank top-ups\")\nprint()\nprint(\"=== PayPal/PayPro detail ===\")\nc=collections.Counter()\nfor m,a,b in rows:\n    if re.search(r\"PAYPAL|PAYPRO|PAYU\",b,re.I): c[b[:40]]+=a\nfor k,v in c.most_common(12): print(f\"  {v:>9,.0f}  {k}\")\nprint()\nprint(\"=== Monthly total spend ===\")\nmo=collections.Counter()\nfor m,a,b in rows: mo[m]+=a\nfor k in sorted(mo): print(f\"  {k}  {mo[k]:>10,.0f}\")\nprint(f\"  AVG {sum(mo.values())/len(mo):,.0f}/mo over {len(mo)} months\")\nEOF",
+  "label": "allow"
+ },
+ {
+  "id": 137,
+  "cwd": "/Users/illiabilan/StudioProjects/diner/diner-android",
+  "cmd": "find ./app/src -name \"*.kt\" -o -name \"*.java\" | head -5 | xargs grep -l \"//\" | head -3",
+  "label": "allow"
+ },
+ {
+  "id": 138,
+  "cwd": "/private/tmp/procx-bench",
+  "cmd": "cd /tmp/procx-bench && sleep 7 && PID=$(cut -d= -f2 job.pid); if kill -0 $PID 2>/dev/null; then echo \"STATUS: running (pid $PID)\"; else echo \"STATUS: exited\"; fi; echo \"lines_so_far=$(wc -l < build.log)\"; tail -n 2 build.log",
+  "label": "allow"
+ },
+ {
+  "id": 139,
+  "cwd": "/Users/illiabilan/StudioProjects/pi-plugins",
+  "cmd": "cd /tmp\nnode -e '\nconst fs = require(\"fs\");\nconst lines = fs.readFileSync(\"final1.log\", \"utf-8\").split(\"\\n\").filter(Boolean);\nfor (const line of lines) {\n  let obj; try { obj = JSON.parse(line); } catch { continue; }\n  if (obj.type === \"turn_end\") {\n    for (const c of obj.message.content || []) {\n      if (c.type === \"thinking\") console.log(\"=== THINKING ===\\n\" + c.thinking);\n      if (c.type === \"toolCall\") console.log(\"=== TOOL CALL: \" + c.name + \" \" + JSON.stringify(c.arguments) + \" ===\");\n    }\n  }\n}\n'",
+  "label": "allow"
+ },
+ {
+  "id": 140,
+  "cwd": "/Users/illiabilan/StudioProjects/busboy",
+  "cmd": "find /Users/illiabilan/StudioProjects/busboy -ipath \"*datadog*\" -iname \"*custom_metric*\" 2>/dev/null\necho \"---\"\nfind /Users/illiabilan/StudioProjects/busboy -ipath \"*custom_metric*\" 2>/dev/null | head -50\necho \"---grep account_settings---\"\ngrep -rl \"account_settings\" /Users/illiabilan/StudioProjects/busboy --include=\"*.json\" -i | grep -i custom | head -20\ngrep -rl \"account_settings\" /Users/illiabilan/StudioProjects/busboy -il | grep -i metric | head -30\n",
+  "label": "nudge"
+ },
+ {
+  "id": 141,
+  "cwd": "/Users/illiabilan/StudioProjects/diner/diner-android",
+  "cmd": "cd /tmp && rm -rf sdkscan && mkdir sdkscan && cd sdkscan\nfor grp in com.forter.mobile com.mparticle com.tealium com.rokt com.usebutton io.branch com.braze com.appboy com.kount com.datadoghq; do\n  find ~/.gradle/caches/modules-2/files-2.1/$grp -name \"*.aar\" -o -name \"*.jar\" 2>/dev/null | grep -v sources | grep -v javadoc\ndone 2>/dev/null | head -40",
+  "label": "allow"
+ },
+ {
+  "id": 142,
+  "cwd": "/Users/illiabilan/StudioProjects/pi-plugins",
+  "cmd": "cd /Users/illiabilan/StudioProjects/pi-plugins/extensions/grep; cat package.json; echo ---; cat test-extension.ts; echo ---; tail -5 grep.ts; echo ---; tail -5 index.ts; echo ---; grep -n \"registerTool\\|name:\" index.ts grep.ts | head",
+  "label": "nudge"
+ },
+ {
+  "id": 143,
+  "cwd": "/Users/illiabilan/StudioProjects/pi-plugins",
+  "cmd": "mkdir -p /tmp/cs-final/src && cd /tmp/cs-final && cat > src/a.ts << 'EOF'\nexport function add(a: number, b: number): number { return a + b; }\nexport class Calculator {\n  compute(x: number) { return add(x, 1); }\n}\nEOF\n(pi -e /Users/illiabilan/StudioProjects/pi-plugins/code-search/code-search.ts -p \"call code_search for 'add' and report the result\" > /tmp/final.log 2>&1 &\nPIPID=$!\nsleep 35\nkill -9 $PIPID 2>/dev/null\n) ; cat /tmp/final.log; rm -rf /tmp/cs-final /tmp/final.log",
+  "label": "allow"
+ },
+ {
+  "id": 144,
+  "cwd": "/Users/illiabilan/StudioProjects/personal",
+  "cmd": "cd /Users/illiabilan/StudioProjects/personal && python3 - <<'EOF'\nimport re\ns=open('/tmp/cat.py',encoding='utf-8').read()\ns=s.replace(''' (\"Health & pharmacy\",''',''' (\"Transfers to Ukraine (Monobank)\", r\"MONOBANK|MONO\\\\*\"),\n (\"Health & pharmacy\",''')\ns=s.replace('|OSTROVSKIY|MASAZ','|OSTROVSKIY|MASAZ|AP\\\\. MAISONNAVE')\ns=s.replace('|CPG SPP','')  # noop\ns=s.replace('|WCT SPARTAN','|WCT SPARTAN|CPG SPP|BP ALWERNIA')\ns=s.replace('|WOOD SP','|WOOD SP|RC WROCLAW|JMDIF|RESTO SO|EXPRESS ORIENTA')\nopen('/tmp/cat2.py','w',encoding='utf-8').write(s)\nEOF\npython3 /tmp/cat2.py 2>&1 | head -35",
+  "label": "allow"
+ },
+ {
+  "id": 145,
+  "cwd": "/Users/illiabilan/StudioProjects/diner/diner-android",
+  "cmd": "cd /Users/illiabilan/StudioProjects/diner/diner-android && git stash push -q -- $(git diff --name-only | tr '\\n' ' ') && ./gradlew :app:kspGrubhubReleaseUnitTestKotlin --console=plain 2>&1 | grep -E \"^e: |^BUILD\" | head -5; git stash pop -q; git status --short | grep -v \"^??\" | wc -l",
+  "label": "allow"
+ },
+ {
+  "id": 146,
+  "cwd": "/Users/illiabilan/StudioProjects/pi-plugins",
+  "cmd": "cat /tmp/accuracy-verify/example.ts\necho \"===\"\ncd /tmp/accuracy-verify\npi -p \"1. Call code_search for query 'handleSubmit' and note the line number. 2. Use the edit tool to insert 5 new comment lines ('// note 1' through '// note 5') at the very top of example.ts, before everything else. 3. Immediately call code_search for query 'handleSubmit' again WITHOUT running /code-index. Report both raw line numbers verbatim, and state whether the second one is now stale/correct.\" 2>&1 | tail -20",
+  "label": "nudge"
+ },
+ {
+  "id": 147,
+  "cwd": "/Users/illiabilan/StudioProjects/personal",
+  "cmd": "cd /Users/illiabilan/StudioProjects/personal && python3 - <<'EOF'\nimport csv,collections\ndef num(s): return float(s.replace('\\u00a0','').replace(' ','').replace(',','.'))\nOWN={\"34124066701111001144609337\",\"40124066701787001144609379\",\"39124066701111001164932396\",\"78124066701787001164932426\"}\ntot=collections.Counter()\nfor name in ['Firm.csv','Individual.csv']:\n    rows=list(csv.DictReader(open(name,encoding='utf-8'),delimiter=';'))\n    ds=sorted({r['Data księgowania'] for r in rows}, key=lambda d:(d[6:],d[3:5],d[:2]))\n    print(name,'first',ds[0],'last',ds[-1])\n    # top external spend categories\n    c=collections.Counter()\n    for r in rows:\n        a=num(r['Kwota operacji'])\n        if a<0 and (r['Rachunek docelowy'] or '').lstrip(\"'\") not in OWN and r['Waluta']=='PLN':\n            c[r['Nadawca / Odbiorca'].strip()[:28] or r['Typ operacji']]+=-a\n            tot[r['Waluta']]+=-a\n    print('  top 12 PLN payees:')\n    for k,v in c.most_common(12): print(f\"    {v:>10,.2f}  {k}\")\nprint('COMBINED external PLN spend:',f\"{tot['PLN']:,.2f}\")\nEOF",
+  "label": "allow"
+ },
+ {
+  "id": 148,
+  "cwd": "/Users/illiabilan/StudioProjects/pi-plugins",
+  "cmd": "rm -rf ~/.pi/agent/extensions/code-search\ncp -r /Users/illiabilan/StudioProjects/pi-plugins/code-search ~/.pi/agent/extensions/code-search\ncd ~/.pi/agent/extensions/code-search\nrm -rf node_modules package-lock.json\nnpm install 2>&1 | tail -3",
+  "label": "nudge"
+ },
+ {
+  "id": 149,
+  "cwd": "/Users/illiabilan/StudioProjects/diner-android",
+  "cmd": "cd /Users/illiabilan/StudioProjects/diner-android && source ~/.zshrc >/dev/null 2>&1; ./.agents/scripts/jira_cli.sh show ADA-48914 2>&1 | head -150",
+  "label": "allow"
+ },
+ {
+  "id": 150,
+  "cwd": "/Users/illiabilan/StudioProjects/personal",
+  "cmd": "cd /Users/illiabilan/StudioProjects/personal && python3 - <<'EOF'\nimport csv, datetime, collections\ndef num(s):\n    s=s.replace('\\xa0','').replace(' ','').replace(',','.'); return float(s) if s else 0.0\ndef load(f):\n    out=[]\n    for r in csv.DictReader(open(f,encoding='utf-8-sig'),delimiter=';'):\n        r['_d']=datetime.datetime.strptime(r['Data księgowania'],'%d.%m.%Y').date()\n        r['_a']=num(r['Kwota operacji']); r['_src']=r['Rachunek źródłowy'].strip().lstrip(\"'\")\n        r['_dst']=r['Rachunek docelowy'].strip().lstrip(\"'\"); r['_ref']=r['Numer referencyjny'].strip().lstrip(\"'\")\n        r['_f']=f; out.append(r)\n    return out\nA=load('Firm.csv')+load('Individual.csv')\nfor acc in ['87124066701111001144609353','28124066701111001164932400']:\n    print('='*15,acc)\n    for r in sorted([x for x in A if x['_src']==acc or x['_dst']==acc],key=lambda x:x['_d'])[:14]:\n        print(f\"  {r['_d']} {r['_a']:>10,.2f} {r['Waluta']} {r['Typ operacji'][:28]:<28} {r['Tytułem'][:45]:<45} src={r['_src'][-6:]} dst={r['_dst'][-6:]} {r['_f'][:4]}\")\n    tot=collections.Counter()\n    for r in A:\n        if r['_src']==acc: tot[r['Waluta']]+=r['_a']\n    print('  net as src:',dict(tot),' n=',sum(1 for r in A if r['_src']==acc))\nprint('\\n=== ODSETKI / PODATEK rows')\nfor r in A:\n    if 'ODSETKI' in r['Typ operacji'] or 'PODATEK' in r['Typ operacji']:\n        print(f\"  {r['_d']} {r['_a']:>9,.2f} {r['Waluta']} {r['Typ operacji'][:22]:<22} src={r['_src'][-6:]} {r['_f'][:4]}\")\nEOF",
+  "label": "allow"
+ },
+ {
+  "id": 151,
+  "cwd": "/Users/illiabilan/StudioProjects/pi-plugins",
+  "cmd": "cd /tmp/toolbuild && python3 - <<'PY'\nimport json,glob,os\nos.makedirs('/tmp/toolbuild/reports',exist_ok=True)\nsummary=[]\nfor f in sorted(glob.glob('logs/*.jsonl')):\n    name=os.path.basename(f)[:-6]\n    texts=[];tok=0;turns=0;cost=0\n    for line in open(f,errors='replace'):\n        try: e=json.loads(line)\n        except: continue\n        if e.get('type')=='message_end':\n            m=e.get('message',{})\n            if m.get('role')=='assistant':\n                turns+=1\n                u=m.get('usage') or {}\n                tok+=u.get('input',0)+u.get('output',0)+u.get('cacheRead',0)+u.get('cacheWrite',0)\n                c=(u.get('cost') or {})\n                cost+=c.get('total',0) if isinstance(c,dict) else 0\n                for p in m.get('content',[]):\n                    if p.get('type')=='text' and p.get('text','').strip(): texts.append(p['text'])\n    final=texts[-1] if texts else ''\n    open(f'/tmp/toolbuild/reports/{name}.md','w').write(final)\n    summary.append((name,turns,tok,cost,len(final)))\nprint(f\"{'agent':17}{'turns':6}{'tokens':10}{'cost$':8}{'report chars'}\")\ntt=tc=0\nfor n,t,k,c,l in summary:\n    print(f\"{n:17}{t:<6}{k:<10}{c:<8.2f}{l}\")\n    tt+=k; tc+=c\nprint(f\"TOTAL tokens {tt:,}  cost ${tc:.2f}\")\nPY",
+  "label": "allow"
+ },
+ {
+  "id": 152,
+  "cwd": "/Users/illiabilan/StudioProjects/pi-plugins",
+  "cmd": "grep -n \"AgentMessage\\|StringEnum\" /opt/homebrew/lib/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/index.d.mts | head -5\ngrep -rn \"AgentMessage\\|StringEnum\" /opt/homebrew/lib/node_modules/@earendil-works/pi-agent-core/dist/index.d.ts 2>/dev/null | head -10\nfind /opt/homebrew/lib/node_modules/@earendil-works -name \"*.d.ts\" | xargs grep -l \"StringEnum\" 2>/dev/null | head -5",
+  "label": "nudge"
+ },
+ {
+  "id": 153,
+  "cwd": "/Users/illiabilan/StudioProjects/pi-plugins",
+  "cmd": "node --check <(node -e 'const {stripTypeScriptTypes}=require(\"node:module\");const fs=require(\"fs\");process.stdout.write(stripTypeScriptTypes(fs.readFileSync(\"extensions/subagent/index.ts\",\"utf8\")))') && echo \"parse OK\"",
+  "label": "allow"
+ },
+ {
+  "id": 154,
+  "cwd": "/Users/illiabilan/StudioProjects/pi-plugins",
+  "cmd": "cd /tmp && python3 - <<'EOF'\nimport json,random\ns=json.load(open('/tmp/samples.json'))\nrandom.seed(1)\nfor k in ['read_file','search','find_files','git']:\n    print('='*20,k)\n    for c in random.sample(s[k], min(25,len(s[k]))):\n        print('---',c.replace('\\n',' ⏎ ')[:220])\nEOF",
+  "label": "allow"
+ },
+ {
+  "id": 155,
+  "cwd": "/Users/illiabilan/StudioProjects/diner-android",
+  "cmd": "curl -s -u \"$JIRA_USERNAME:$JIRA_API_TOKEN\" -H \"Accept: application/json\" \"https://grubhub.atlassian.net/rest/api/2/issue/ADA-48951?fields=summary,status,assignee,priority,description,issuetype,parent,customfield_10014\" | python3 -m json.tool",
+  "label": "allow"
+ },
+ {
+  "id": 156,
+  "cwd": "/Users/illiabilan/StudioProjects/pi-plugins",
+  "cmd": "cd /Users/illiabilan/StudioProjects/pi-plugins/code-search && node -e \"\nconst wts = require('web-tree-sitter');\nconsole.log('typeof', typeof wts);\nconsole.log('has default?', 'default' in wts);\nconsole.log('has Language?', 'Language' in wts);\nconsole.log(wts.name);\n\"",
+  "label": "allow"
+ },
+ {
+  "id": 157,
+  "cwd": "/Users/illiabilan/StudioProjects/pi-plugins",
+  "cmd": "cd ~/.pi/agent/extensions; B=~/.pi/agent/extensions-backup-$(date +%Y%m%d%H%M%S); mkdir -p $B; R=/Users/illiabilan/StudioProjects/pi-plugins\nfor p in \"active-subagents-widget:$R/active-subagents-widget\" \"code-search:$R/tools/code-search\" \"subagent:$R/extensions/subagent\" \"token-stats:$R/extensions/token-stats\"; do\n  d=${p%%:*}; s=${p#*:}; mv \"$d\" \"$B/$d\"; ln -s \"$s\" \"$d\"; done\necho \"backup: $B\"; ls -la",
+  "label": "allow"
+ },
+ {
+  "id": 158,
+  "cwd": "/Users/illiabilan/StudioProjects/pi-plugins",
+  "cmd": "cd /Users/illiabilan/StudioProjects/busboy && pi --mode json -p \"$(cat /tmp/grep_validate/prompt.txt)\" > /tmp/grep_validate/runs/new_2.jsonl 2>&1; echo \"exit:$? lines:$(wc -l < /tmp/grep_validate/runs/new_2.jsonl)\"",
+  "label": "allow"
+ },
+ {
+  "id": 159,
+  "cwd": "/Users/illiabilan/StudioProjects/pi-plugins",
+  "cmd": "cd /tmp\necho \"=== WITH code_search: final answer ===\"\nnode -e '\nconst fs=require(\"fs\");\nconst lines = fs.readFileSync(\"big3.log\",\"utf-8\").split(\"\\n\").filter(Boolean);\nfor (const l of lines) { try { const o=JSON.parse(l); if(o.type===\"agent_end\"){ const last=o.messages[o.messages.length-1]; console.log(last.content?.[0]?.text); } } catch{} }\n'\necho\necho \"=== WITHOUT code_search: final answer ===\"\nnode -e '\nconst fs=require(\"fs\");\nconst lines = fs.readFileSync(\"big4.log\",\"utf-8\").split(\"\\n\").filter(Boolean);\nfor (const l of lines) { try { const o=JSON.parse(l); if(o.type===\"agent_end\"){ const last=o.messages[o.messages.length-1]; console.log(last.content?.[0]?.text); } } catch{} }\n'",
+  "label": "allow"
+ },
+ {
+  "id": 160,
+  "cwd": "/Users/illiabilan/StudioProjects/diner",
+  "cmd": "cd /Users/illiabilan/StudioProjects/diner/diner-android && ./gradlew :features:subscriptions:compileGrubhubDebugUnitTestKotlin -q 2>&1 | tail -40",
+  "label": "nudge"
+ },
+ {
+  "id": 161,
+  "cwd": "/Users/illiabilan/StudioProjects/pi-plugins",
+  "cmd": "cd /Users/illiabilan/StudioProjects/pi-plugins; git status --short | head -20",
+  "label": "nudge"
+ },
+ {
+  "id": 162,
+  "cwd": "/private/tmp/gradlex-synth/big",
+  "cmd": "ls -la; echo \"---\"; cat settings.gradle* 2>/dev/null | head -50",
+  "label": "nudge"
+ },
+ {
+  "id": 163,
+  "cwd": "/private/tmp/nodex-bench/ext",
+  "cmd": "cd ~/StudioProjects/pi-plugins && ls -la; echo \"=== tsconfigs:\"; find . -maxdepth 3 -name \"tsconfig*.json\" -not -path \"*/node_modules/*\" 2>/dev/null; echo \"=== typescript installed?\"; ls node_modules/.bin 2>/dev/null | grep -i tsc; ls node_modules/typescript/package.json 2>/dev/null && node -e \"console.log(require('./node_modules/typescript/package.json').version)\"",
+  "label": "nudge"
+ },
+ {
+  "id": 164,
+  "cwd": "/private/tmp/agentbuilder-test",
+  "cmd": "echo done",
+  "label": "allow"
+ },
+ {
+  "id": 165,
+  "cwd": "/Users/illiabilan/StudioProjects/pi-plugins",
+  "cmd": "node -e 'const {stripTypeScriptTypes}=require(\"node:module\");const fs=require(\"fs\"); try { const stripped = stripTypeScriptTypes(fs.readFileSync(\"extensions/subagent/index.ts\",\"utf8\")); require(\"child_process\").execSync(\"node --check /dev/stdin\", {input: stripped, stdio: [\"pipe\",\"pipe\",\"pipe\"]}); console.log(\"parse OK\") } catch(e) { console.log(e.stderr?.toString() || e.message) }' 2>/dev/null",
+  "label": "allow"
+ },
+ {
+  "id": 166,
+  "cwd": "/Users/illiabilan/StudioProjects/pi-plugins",
+  "cmd": "mkdir -p /tmp/token-bench/src/{auth,utils,models,api,components} && cd /tmp/token-bench\n# Build a moderately sized fake codebase with the target function buried deep\ncat > src/utils/helpers.ts << 'EOF'\nexport function formatDate(d: Date): string { return d.toISOString(); }\nexport function slugify(s: string): string { return s.toLowerCase().replace(/\\s+/g, \"-\"); }\nexport function debounce(fn: Function, ms: number) { let t: any; return (...args: any[]) => { clearTimeout(t); t = setTimeout(() => fn(...args), ms); }; }\nEOF\ncat > src/models/user.ts << 'EOF'\nexport interface User { id: string; email: string; role: string; }\nexport function isAdmin(u: User): boolean { return u.role === \"admin\"; }\nEOF\ncat > src/api/client.ts << 'EOF'\nexport class ApiClient {\n  constructor(private baseUrl: string) {}\n  async get(path: string) { return fetch(this.baseUrl + path); }\n}\nexport function createClient(url: string) { return new ApiClient(url); }\nEOF\ncat > src/components/button.tsx << 'EOF'\nexport function Button({ label }: { label: string }) { return null; }\nEOF\ncat > src/auth/session.ts << 'EOF'\nimport { User } from \"../models/user\";\nexport interface Session { token: string; user: User; expiresAt: number; }\nexport function isSessionExpired(s: Session): boolean {\n  return Date.now() > s.expiresAt;\n}\nexport function refreshSession(s: Session): Session {\n  return { ...s, expiresAt: Date.now() + 3600_000 };\n}\nEOF\n# The target: buried deep, generic-ish name to make grep noisy\ncat > src/auth/permissions.ts << 'EOF'\nimport { User } from \"../models/user\";\nimport { Session } from \"./session\";\n\ninterface PermissionRule {\n  resource: string;\n  action: string;\n}\n\nconst RULES: PermissionRule[] = [\n  { resource: \"posts\", action: \"read\" },\n  { resource: \"posts\", action: \"write\" },\n];\n\nexport function checkAccess(session: Session, resource: string, action: string): boolean {\n  if (isSessionExpired(session)) return false;\n  if (session.user.role === \"admin\") return true;\n  return RULES.some((r) => r.resource === resource && r.action === action);\n}\n\nfunction isSessionExpired(s: Session): boolean {\n  return Date.now() > s.expiresAt;\n}\nEOF\nfind . -name \"*.ts*\" | wc -l",
+  "label": "allow"
+ },
+ {
+  "id": 167,
+  "cwd": "/Users/illiabilan/StudioProjects/diner-android",
+  "cmd": "cd /Users/illiabilan/StudioProjects/diner-android && python3 - <<'PY'\np='features/subscriptions/src/test/java/com/grubhub/features/subscriptions/presentation/checkout/SubscriptionCheckoutViewModelTest.kt'\ns=open(p).read()\ns=s.replace('    private val celebrationAnalytics: SubscriptionCelebrationInterstitialAnalytics = mock()\\n','')\ns=s.replace('            analytics,\\n            celebrationAnalytics,\\n','            analytics,\\n')\ns=s.replace('import com.grubhub.features.subscriptions.analytics.SubscriptionCelebrationInterstitialAnalytics\\n','')\ns=s.replace('''        assertThat(resultCaptor.firstValue.interstitialParams.isBackendDriven).isTrue()\n        verify(celebrationAnalytics, never())\n            .fireCelebrationCopyMissingTelemetry(any(), any(), any())\n''','''        assertThat(resultCaptor.firstValue.interstitialParams.isBackendDriven).isTrue()\n''')\nstart=s.index('    @Test\\n    fun `when BE celebration copy is unusable then celebration copy missing telemetry is fired`')\nend=s.index('    // ===== Amazon Linking Tests =====')\ns=s[:start]+s[end:]\nopen(p,'w').write(s)\nPY\ngrep -n \"celebrationAnalytics\\|fireCelebrationCopyMissing\" features/subscriptions/src/test/java/com/grubhub/features/subscriptions/presentation/checkout/SubscriptionCheckoutViewModelTest.kt | head",
+  "label": "allow"
+ },
+ {
+  "id": 168,
+  "cwd": "/Users/illiabilan/StudioProjects/pi-plugins",
+  "cmd": "cd /Users/illiabilan/StudioProjects/pi-plugins && git status --short | grep -v \"^??\" ; echo \"--- new dirs:\"; git status --short | grep \"^??\"; echo \"--- sizes\"; for d in grep list-files git gradle-build file-ops process pi-trace node-project diff path-stats file-write-plus gh archive-inspect env-info; do printf \"%-18s %s\\n\" \"$d\" \"$(cat extensions/$d/*.ts 2>/dev/null | wc -l | tr -d ' ') LOC\"; done",
+  "label": "allow"
+ },
+ {
+  "id": 169,
+  "cwd": "/Users/illiabilan/StudioProjects/diner-android",
+  "cmd": "cd /Users/illiabilan/StudioProjects/diner-android && ./gradlew :features:subscriptions:testGrubhubReleaseUnitTest --offline 2>&1 | grep -E \"FAILED|BUILD\" | head -5 && git status --short",
+  "label": "nudge"
+ },
+ {
+  "id": 170,
+  "cwd": "/Users/illiabilan/StudioProjects/pi-plugins",
+  "cmd": "mkdir -p ~/.pi/agent/extensions ~/.pi/agent/agents ~/.pi/agent/prompts ~/.pi/agent/skills && cp -r extensions/token-stats ~/.pi/agent/extensions/ && cp -r extensions/subagent ~/.pi/agent/extensions/",
+  "label": "nudge"
+ },
+ {
+  "id": 171,
+  "cwd": "/Users/illiabilan/StudioProjects/pi-plugins",
+  "cmd": "cd ~/StudioProjects/diner-android/\necho \"--- real declaration ---\"\ngrep -rn \"class PaymentMethodViewModel\\b\" --include=\"*.kt\" . 2>/dev/null | grep -v \"/build/\"\necho\necho \"--- bare-name grep (what a model unaware of exact class/interface keyword would run) ---\"\ngrep -rn \"\\bPaymentMethodViewModel\\b\" --include=\"*.kt\" . 2>/dev/null | grep -v \"/build/\" | wc -l\necho \"total hits; sample including the comment false-positives:\"\ngrep -rn \"\\bPaymentMethodViewModel\\b\" --include=\"*.kt\" . 2>/dev/null | grep -v \"/build/\" | grep \"^\\S*:[0-9]*:\\s*//\" | head -5",
+  "label": "nudge"
+ },
+ {
+  "id": 172,
+  "cwd": "/Users/illiabilan/StudioProjects/diner-android",
+  "cmd": "cd /Users/illiabilan/StudioProjects/diner-android && grep -rn \"celebration\" --include=*.kt features/subscriptions-shared/src/main features/subscriptions/src/main -il | head -30",
+  "label": "nudge"
+ },
+ {
+  "id": 173,
+  "cwd": "/Users/illiabilan/StudioProjects/pi-plugins",
+  "cmd": "for i in $(seq 1 50); do\n  if ! kill -0 22562 2>/dev/null; then echo \"finished after ~$((i*10))s\"; break; fi\n  sleep 10\ndone\nif kill -0 22562 2>/dev/null; then echo \"still running after ~500s\"; fi",
+  "label": "allow"
+ },
+ {
+  "id": 174,
+  "cwd": "/Users/illiabilan/StudioProjects/diner-android",
+  "cmd": "cd /Users/illiabilan/StudioProjects/diner-android && ./gradlew :features:subscriptions:compileGrubhubReleaseSources --offline 2>&1 | tail -30",
+  "label": "nudge"
+ },
+ {
+  "id": 175,
+  "cwd": "/Users/illiabilan/StudioProjects/diner/diner-android",
+  "cmd": "cd /Users/illiabilan/StudioProjects/diner/diner-android && ls .docs/ 2>/dev/null && wc -l \".docs/Subscriptions API.md\"",
+  "label": "nudge"
+ },
+ {
+  "id": 176,
+  "cwd": "/Users/illiabilan/StudioProjects/diner/diner-android",
+  "cmd": "cd /Users/illiabilan/StudioProjects/diner/diner-android && grep -rn \"ImageBulletListItem\" --include=*.kt . | grep -v \"/test/\" | head -20",
+  "label": "nudge"
+ },
+ {
+  "id": 177,
+  "cwd": "/Users/illiabilan/StudioProjects/pi-plugins",
+  "cmd": "cd /Users/illiabilan/StudioProjects/pi-plugins/extensions/multi-file-read && grep -n \"newText2\" index.ts; npx tsc --noEmit --target es2022 --module esnext --moduleResolution bundler --skipLibCheck --esModuleInterop --allowImportingTsExtensions index.ts && cd /tmp/mfrbench && for i in 1 2 3; do ./runner.sh sonc_$i --model claude-sonnet-5 \"In one line each, tell me what alpha.py, beta.py and gamma.py contain.\" 2>/dev/null | sed -n '1,3p'; done",
+  "label": "allow"
+ },
+ {
+  "id": 178,
+  "cwd": "/Users/illiabilan/StudioProjects/diner/diner-android",
+  "cmd": "cd /Users/illiabilan/StudioProjects/diner/diner-android && cat >> .personal/sessions/ADA-48951/03_execution_log.txt <<'EOF'\nFix: mockito nested-mock stubbing -> pre-built mocks; coroutine stacktrace recovery -> verify by message.\nFix: @OptIn(ExperimentalCoroutinesApi) for UnconfinedTestDispatcher (-Werror).\nValidation: :features:subscriptions:testGrubhubReleaseUnitTest --tests *UserSubscription* -> 19/19 pass.\nValidation: assembleGrubhubStaging -> BUILD SUCCESSFUL (Dagger graph OK).\nEOF\ngit status --short | grep -vE \"^\\?\\? (\\.ignore|\\.pi|docs/|graphify-out|kotlin-structural-mcp|run_graphify|scripts/har)\"",
+  "label": "nudge"
+ },
+ {
+  "id": 179,
+  "cwd": "/Users/illiabilan/StudioProjects/pi-plugins",
+  "cmd": "pi --help 2>&1 | head -80",
+  "label": "allow"
+ },
+ {
+  "id": 180,
+  "cwd": "/Users/illiabilan/StudioProjects/diner-android",
+  "cmd": "cd /tmp && gh pr view 19880 --repo GrubhubProd/DinerApp-iOS --json headRefName -q .headRefName && gh api \"repos/GrubhubProd/DinerApp-iOS/contents/src/DinerAppSource/UI/Subscriptions/ConsolidatedCheckout/SubscriptionConsolidatedCheckoutDatasource.swift\" -q .content > /tmp/ds.b64 2>/dev/null; wc -c /tmp/ds.b64; base64 -D -i /tmp/ds.b64 2>/dev/null | grep -n \"func legacyCelebrationCopyModel\" -A 30",
+  "label": "allow"
+ },
+ {
+  "id": 181,
+  "cwd": "/Users/illiabilan/.pi",
+  "cmd": "cd /opt/homebrew/lib/node_modules/@earendil-works/pi-coding-agent && ls node_modules | grep -iE \"typescript|esbuild|sucrase|swc|oxc|babel|amaro|ts-\" ; echo \"--- deps:\"; node -e \"const p=require('./package.json');console.log(JSON.stringify({...p.dependencies,...p.devDependencies},null,1))\" 2>/dev/null | grep -iE \"typescript|esbuild|swc|oxc|babel|amaro\"",
+  "label": "allow"
+ },
+ {
+  "id": 182,
+  "cwd": "/private/tmp/mtime-test",
+  "cmd": "cd /private/tmp/mtime-test && sed -i '' '1i\\\n// shift line 1\\\n// shift line 2\\\n// shift line 3\\\n// shift line 4\\\n// shift line 5' example.ts && cat -n example.ts | head -10",
+  "label": "allow"
+ },
+ {
+  "id": 183,
+  "cwd": "/Users/illiabilan/StudioProjects/pi-plugins",
+  "cmd": "cd /tmp/accuracy-verify\npi -p \"1. Call code_search for query 'brandNew'. 2. Then use the write tool to append this to example.ts: 'export function brandNewFunction() { return 1; }'. 3. Immediately call code_search for query 'brandNew' again WITHOUT running /code-index. Report both raw results verbatim.\" 2>&1 | tail -20",
+  "label": "nudge"
+ },
+ {
+  "id": 184,
+  "cwd": "/Users/illiabilan/StudioProjects/pi-plugins",
+  "cmd": "sed -n '820,850p' /Users/illiabilan/.pi/agent/extensions/subagent/index.ts",
+  "label": "block"
+ },
+ {
+  "id": 185,
+  "cwd": "/Users/illiabilan/StudioProjects/personal",
+  "cmd": "cd /Users/illiabilan/StudioProjects/personal && python3 - <<'PY'\nexec(open('/tmp/final.py').read())\nimport csv,datetime,statistics as st\n# attach value date\nvd={}\nfor f in ['Firm.csv','Individual.csv']:\n    for r in csv.DictReader(open(f,encoding='utf-8-sig'),delimiter=';'):\n        k=(r['Numer referencyjny'].strip().lstrip(\"'\"),r['Kwota operacji'].strip(),r['Typ operacji'].strip())\n        vd[k]=datetime.datetime.strptime(r['Data waluty'],'%d.%m.%Y').date()\nfor r in EO:\n    r['vd']=vd.get((r['ref'],None),None)\nfor r in EO:\n    for k,v in vd.items():\n        pass\n# simpler: re-read with value date directly\ndef num(s):\n    s=s.replace('\\xa0','').replace(' ','').replace(',','.'); return float(s) if s else 0.0\nVROWS=[]\nfor f in ['Firm.csv','Individual.csv']:\n    for r in csv.DictReader(open(f,encoding='utf-8-sig'),delimiter=';'):\n        VROWS.append({'ref':r['Numer referencyjny'].strip().lstrip(\"'\"),'a':num(r['Kwota operacji']),\n            'typ':r['Typ operacji'].strip(),'vd':datetime.datetime.strptime(r['Data waluty'],'%d.%m.%Y').date()})\nidx={}\nfor v in VROWS: idx[(v['ref'],round(v['a'],2),v['typ'])]=v['vd']\nmiss=0\nfor r in EO:\n    r['vd']=idx.get((r['ref'],round(r['a'],2),r['typ']), r['d'])\n    if (r['ref'],round(r['a'],2),r['typ']) not in idx: miss+=1\nprint('value-date match misses:',miss,'of',len(EO))\n\nL=[r for r in EO if r['cat'] in LIVING]\nd=collections.defaultdict(float)\nfor r in L: d[r['vd']]+=-r['pln']\nlo,hi=min(r['vd'] for r in L),max(r['vd'] for r in L)\ndays=(hi-lo).days+1\nvals=[d.get(lo+datetime.timedelta(i),0.0) for i in range(days)]\nsp=[v for v in vals if v>0]\nNAMES=['Mon','Tue','Wed','Thu','Fri','Sat','Sun']\nprint(f'\\nDAILY LIVING (value dates, {days} days: {lo}..{hi})')\nprint(f'  avg/day {sum(vals)/days:,.0f} | median {st.median(vals):,.0f} | no-spend days {days-len(sp)} ({(days-len(sp))/days*100:.0f}%)')\nprint(f'  p75 {st.quantiles(sp,n=4)[2]:,.0f} p90 {st.quantiles(sp,n=10)[8]:,.0f} max {max(sp):,.0f}')\nprint(f'  63%-check: spend on days>500 = {sum(v for v in vals if v>500)/sum(vals)*100:.0f}% of total')\nprint('  weekday avg / median:')\ndw=collections.defaultdict(list)\nfor i in range(days):\n    dt=lo+datetime.timedelta(i); dw[dt.weekday()].append(d.get(dt,0.0))\nfor k in range(7): print(f'     {NAMES[k]} avg {sum(dw[k])/len(dw[k]):>6,.0f}  median {st.median(dw[k]):>6,.0f}')\n# weekly\nwk=collections.defaultdict(float)\nfor r in L: wk[r['vd'].isocalendar()[:2]]+=-r['pln']\nw=sorted(wk.values())\nprint(f'\\nWEEKLY LIVING: avg {sum(w)/len(w):,.0f} | median {st.median(w):,.0f} | p25 {st.quantiles(w,n=4)[0]:,.0f} | p75 {st.quantiles(w,n=4)[2]:,.0f} | max {max(w):,.0f} (n={len(w)} weeks)')\n\n# ---- BUDGET SCENARIOS\ninc=sum(r['pln'] for r in EI)/12\ncut=datetime.date(2026,2,12)\nfx6=collections.defaultdict(float)\nfor r in EO:\n    if r['cat'] in FIXED and r['d']>=cut: fx6[r['cat']]+=r['pln']\nprint('\\nFORWARD FIXED (last 6 mo, PLN/mo)')\ntf=0\nfor k,v in sorted(fx6.items(),key=lambda x:x[1]): print(f'   {k:<22}{-v/6:>8,.0f}'); tf+=-v/6\nprint(f'   {\"TOTAL FIXED\":<22}{tf:>8,.0f}')\nlump=sum(r['pln'] for r in EO if r['cat'] in ENVEL)/12\nliv=sum(r['pln'] for r in EO if r['cat'] in LIVING)/12\nprint(f'\\nCurrent: income {inc:,.0f} | fixed {tf:,.0f} | living {-liv:,.0f} | lumpy {-lump:,.0f} | net {inc-tf+liv+lump:,.0f}')\nprint('\\n=== SCENARIOS (target = % of gross income saved) ===')\nfor pct in (0.15,0.175,0.20):\n    save=inc*pct\n    pool=inc-tf-save          # for living + lumpy\n    for lumpy_share in (4500,4000,3500):\n        living=pool-lumpy_share\n        print(f'  save {pct*100:>4.1f}% ({save:>6,.0f})  lumpy env {lumpy_share:>5,.0f} -> living {living:>6,.0f}/mo = {living/30.4:>5,.0f}/day = {living/4.345:>6,.0f}/week')\n    print()\nPY",
+  "label": "allow"
+ },
+ {
+  "id": 186,
+  "cwd": "/Users/illiabilan/StudioProjects/diner-android",
+  "cmd": "cd /Users/illiabilan/StudioProjects/diner-android && ./gradlew :features:subscriptions:detektStep --console=plain 2>&1 | tail -60",
+  "label": "nudge"
+ },
+ {
+  "id": 187,
+  "cwd": "/Users/illiabilan/StudioProjects/pi-plugins",
+  "cmd": "cd /Users/illiabilan/StudioProjects/pi-plugins && cat > /tmp/mfrbench/tok.py <<'PY'\nimport json,sys\nf=sys.argv[1]\ncalls={};order=[];res=0\nusage=[]\nfor line in open(f):\n    try: ev=json.loads(line)\n    except: continue\n    def w(o):\n        global res\n        if isinstance(o,dict):\n            if o.get(\"type\")==\"toolCall\":\n                cid=o.get(\"id\") or o.get(\"toolCallId\")\n                if cid not in calls: order.append(cid)\n                calls[cid]=o.get(\"name\")\n            if \"usage\" in o and isinstance(o[\"usage\"],dict): usage.append(o[\"usage\"])\n            for v in o.values(): w(v)\n        elif isinstance(o,list):\n            [w(v) for v in o]\n    w(ev)\n    if ev.get(\"type\")==\"tool_execution_end\":\n        t=json.dumps(ev.get(\"result\",{}))\n        res+=len(t)\nnames=[calls[c] for c in order]\nu=usage[-1] if usage else {}\ntot=(u.get(\"input\",0)+u.get(\"cacheRead\",0)+u.get(\"cacheWrite\",0)) if u else 0\nprint(f\"{f}: calls={len(order)} {names} toolResultChars={res} lastTurnContextTokens={tot}\")\nPY\nls extensions/*/index.ts | head -6",
+  "label": "nudge"
+ },
+ {
+  "id": 188,
+  "cwd": "/Users/illiabilan/StudioProjects/personal",
+  "cmd": "cd /Users/illiabilan/StudioProjects/personal && python3 - <<'EOF'\nimport csv,re\ndef num(s): return float(s.replace('\\u00a0','').replace(' ','').replace(',','.'))\nfor name in ['Firm.csv','Individual.csv']:\n    for r in csv.DictReader(open(name,encoding='utf-8'),delimiter=';'):\n        a=num(r['Kwota operacji']); b=r['Nadawca / Odbiorca']\n        if a<0 and re.search(r\"PRODUCTEXPE|DOZR5FC|PAYPRO|RANKOMAT|NETFLIX|OPENAI|ORANGE|GOOGLE|CASTING|KIDSVIEW|AUTOPAY\",b,re.I):\n            print(f\"{r['Data księgowania']} {a:>10.2f} {r['Waluta']} {b[:38]:<38} {r['Tytułem'][:30]}\")\nEOF",
+  "label": "allow"
+ },
+ {
+  "id": 189,
+  "cwd": "/Users/illiabilan/StudioProjects/busboy",
+  "cmd": "grep -n \"INVALID_RUM_GROUP_BY_TAGS_SUBSTRINGS\" -A 15 /Users/illiabilan/StudioProjects/busboy/bb/src/lib/util/datadog.py | head -20",
+  "label": "block"
+ },
+ {
+  "id": 190,
+  "cwd": "/Users/illiabilan/StudioProjects/personal",
+  "cmd": "cd /Users/illiabilan/StudioProjects/personal && python3 - <<'PY'\nexec(open('/tmp/final.py').read())\nprint('--- GMINA WROCŁAW / city (not in your list)')\nfor r in sorted([x for x in EO if 'GMINA' in x['who'].upper() or 'ZARZĄD' in x['who'].upper() or 'URZAD MIASTA' in x['who'].upper()],key=lambda x:x['d']):\n    print(f\"   {r['d']} {r['pln']:>8,.0f}  {r['who'][:24]:<24} {r['ttl'][:34]}\")\nprint('--- real recurring subs (not in your list)')\nfor r in sorted([x for x in EO if x['cat']=='Digital/subs'],key=lambda x:x['d'])[-12:]:\n    print(f\"   {r['d']} {r['pln']:>8,.0f}  {r['who'][:34]}\")\nprint('--- insurance')\nfor r in [x for x in EO if x['cat']=='Insurance']: print(f\"   {r['d']} {r['pln']:>8,.0f}  {r['who'][:30]}\")\nprint()\nprint('='*70)\n# ---- user's mandatory list\nMAND_JUL=dict(Kwartyra=4550,Komirka=120,Internet=104.37,Zvyazok=35,Podatok=3175.01,ZUS=0,Sadochok=0,Zal=272,Trener=0)\nMAND_AUG=dict(Kwartyra=4550,Komirka=120,Internet=103.81,Zvyazok=35,Podatok=2883.04,ZUS=830.58,Sadochok=0,Zal=272,Trener=0)\nfor lab,inc_usd,rate,M in [('Липень 2026',6480,3.7690,MAND_JUL),('Серпень 2026',6000,3.6962,MAND_AUG)]:\n    m=sum(M.values()); inc_pln=inc_usd*rate; rem=inc_pln-m\n    save=inc_pln*0.20; allow=rem-save\n    print(f'{lab}: дохід ${inc_usd:,.0f} @ {rate} = {inc_pln:,.0f} PLN')\n    print(f'   обовʼязкові {m:,.2f} PLN (${m/rate:,.2f})  -> залишок {rem:,.0f} PLN (${rem/rate:,.2f})')\n    print(f'   ціль 20% = {save:,.0f} PLN (${save/rate:,.0f})')\n    print(f'   ДОЗВОЛЕНО: {allow:,.0f} PLN/міс = {allow/4.345:,.0f} PLN/тиж = {allow/30.4:,.0f} PLN/день  (${allow/rate/4.345:,.0f}/тиж)')\n    print()\nprint('='*70)\n# normalized base month\nprint('БАЗОВИЙ МІСЯЦЬ (нормалізований: $6000, курс 3.70, ЗУС включено)')\nbase=dict(Kwartyra=4550,Komirka=121.50,Internet=104,Zvyazok=35,Podatok=3029,ZUS=830.58,Zal=279.90)\nextra=dict(Strahovka=173,Gmina=128,Subs=152)\ninc=6000*3.70\nfor lab,mm in [('A. лише твій список',base),('B. + реальні регулярні, яких немає в списку',{**base,**extra})]:\n    m=sum(mm.values()); rem=inc-m; save=inc*0.20; allow=rem-save\n    print(f'\\n{lab}: обовʼязкові {m:,.0f} PLN')\n    print(f'   дохід {inc:,.0f} | залишок {rem:,.0f} | 20% = {save:,.0f}')\n    print(f'   ДОЗВОЛЕНО {allow:,.0f} PLN/міс = {allow/4.345:,.0f} PLN/тиж = {allow/30.4:,.0f} PLN/день')\nprint()\nprint('='*70)\nliv=sum(r['pln'] for r in EO if r['cat'] in LIVING)/12\nlum=sum(r['pln'] for r in EO if r['cat'] in ENVEL)/12\n# non-mandatory actual = everything except items in user's list\nMANDCATS=['Rent','Taxes ZUS/US','Telecom/Internet','Gym/fitness']\nnonm=sum(r['pln'] for r in EO if r['cat'] not in MANDCATS)/12\nprint(f'ФАКТ: не-обовʼязкові витрати зараз = {-nonm:,.0f} PLN/міс = {-nonm/4.345:,.0f} PLN/тиж')\nprint(f'   (щоденне {-liv:,.0f} + нерегулярне {-lum:,.0f} + страховка/gmina/subs)')\nPY",
+  "label": "allow"
+ },
+ {
+  "id": 191,
+  "cwd": "/private/tmp/ghx-bench/wr",
+  "cmd": "gh pr view 999 --json number,title,state,baseRefName,headRefName,mergeable,mergeStateStatus 2>&1",
+  "label": "nudge"
+ },
+ {
+  "id": 192,
+  "cwd": "/Users/illiabilan/StudioProjects/pi-plugins",
+  "cmd": "cd /Users/illiabilan/StudioProjects/pi-plugins/extensions/multi-file-read && grep -rln \"DEFAULT_MAX_LINES\" node_modules/@earendil-works/pi-coding-agent/dist | head",
+  "label": "block"
+ },
+ {
+  "id": 193,
+  "cwd": "/Users/illiabilan/StudioProjects/diner/diner-android",
+  "cmd": "cd /tmp/sdkscan\nfor a in $(find ~/.gradle/caches/modules-2/files-2.1/com.google.android.gms ~/.gradle/caches/modules-2/files-2.1/com.google.android.libraries.ads.mobile.sdk \\( -name \"*.aar\" -o -name \"*.jar\" \\) 2>/dev/null | grep -viE \"sources|javadoc\"); do\n  name=$(basename $a); d=\"g_$name\"\n  if [[ $a == *.aar ]]; then mkdir -p \"$d\"; unzip -qo \"$a\" classes.jar -d \"$d\" 2>/dev/null; jar=\"$d/classes.jar\"; else jar=\"$a\"; fi\n  [ -f \"$jar\" ] || continue\n  mkdir -p \"$d/cls\"; unzip -qo \"$jar\" -d \"$d/cls\" \"*.class\" 2>/dev/null\n  for f in $(grep -rl \"sleep\" \"$d/cls\" 2>/dev/null); do\n    javap -p -c \"$f\" 2>/dev/null | grep -q \"Thread.sleep\" && echo \"$name :: ${f#$d/cls/}\"\n  done\ndone; echo GMS_DONE",
+  "label": "allow"
+ },
+ {
+  "id": 194,
+  "cwd": "/Users/illiabilan/StudioProjects/pi-plugins",
+  "cmd": "sleep 600; python3 /tmp/toolbuild/mon.py 2>/dev/null | head -8",
+  "label": "allow"
+ },
+ {
+  "id": 195,
+  "cwd": "/private/tmp/pitrace-bench1",
+  "cmd": "head -3 \"/Users/illiabilan/.pi/agent/sessions/--Users-illiabilan-StudioProjects-pi-plugins--/2026-08-06T11-49-59-939Z_019fd6e8-aa03-743e-8ae3-8ca0ff1c239d.jsonl\" | python3 -c \"import sys,json; [print(json.dumps(json.loads(l), indent=2)[:2000]) for l in sys.stdin]\"",
+  "label": "allow"
+ },
+ {
+  "id": 196,
+  "cwd": "/Users/illiabilan/StudioProjects/diner/diner-android",
+  "cmd": "git diff --name-only",
+  "label": "nudge"
+ },
+ {
+  "id": 197,
+  "cwd": "/private/tmp/nodex-bench/ext",
+  "cmd": "cd /tmp/nodex-typecheck && ./node_modules/.bin/tsc -p tsconfig.json --pretty false 2>&1 | tee /tmp/nodex-typecheck/out.txt | head -60; echo \"=== exit: ${PIPESTATUS[0]}\"; echo \"=== total error lines:\"; grep -cE \"error TS\" /tmp/nodex-typecheck/out.txt",
+  "label": "allow"
+ },
+ {
+  "id": 198,
+  "cwd": "/Users/illiabilan/StudioProjects/diner/diner-android",
+  "cmd": "cd /Users/illiabilan/StudioProjects/diner/diner-android && grep -rn \"turbine\" gradle/libs.versions.toml features/subscriptions/build.gradle | head; ls features/subscriptions/src/test/java/com/grubhub/features/subscriptions/v2/upsell/",
+  "label": "nudge"
+ },
+ {
+  "id": 199,
+  "cwd": "/Users/illiabilan/StudioProjects/pi-plugins",
+  "cmd": "cd /tmp\necho \"=== WITH code_search: per-turn breakdown ===\"\nnode -e '\nconst fs = require(\"fs\");\nconst lines = fs.readFileSync(\"big3.log\", \"utf-8\").split(\"\\n\").filter(Boolean);\nfor (const line of lines) {\n  let obj; try { obj = JSON.parse(line); } catch { continue; }\n  if (obj.type === \"turn_end\") {\n    const u = obj.message.usage;\n    const toolCalls = (obj.message.content||[]).filter(c=>c.type===\"toolCall\").map(c=>c.name+\"(\"+JSON.stringify(c.arguments).slice(0,60)+\")\");\n    console.log(JSON.stringify({toolCalls, input:u.input, output:u.output, cacheWrite:u.cacheWrite, cacheRead:u.cacheRead}));\n  }\n}\n'",
+  "label": "allow"
+ },
+ {
+  "id": 200,
+  "cwd": "/Users/illiabilan/StudioProjects/diner-android",
+  "cmd": "cd /Users/illiabilan/StudioProjects/diner-android && ./gradlew :features:subscriptions:ktlintFormat --console=plain 2>&1 | tail -30",
+  "label": "nudge"
+ }
+]
