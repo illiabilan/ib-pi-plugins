@@ -1,0 +1,23 @@
+{
+  "name": "pi-node-project",
+  "version": "1.0.0",
+  "description": "npm/tsc workflow tool for Pi: install, typecheck, test, build, outdated, info with parsed, capped output.",
+  "type": "module",
+  "keywords": [
+    "pi",
+    "pi-coding-agent",
+    "npm",
+    "typescript",
+    "tsc",
+    "typecheck"
+  ],
+  "license": "MIT",
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*",
+    "typebox": "*"
+  },
+  "pi": {
+    "extensions": ["./index.ts"]
+  }
+}
