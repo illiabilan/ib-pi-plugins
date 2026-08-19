@@ -29,9 +29,33 @@ const factory = await jiti.import(new URL("./index.ts", import.meta.url).pathnam
 let tool;
 factory({ registerTool: (t) => (tool = t), on() {}, registerCommand() {} });
 
-const call = async (params, cwd) => {
-	const res = await tool.execute("t", params, undefined, undefined, { cwd, hasUI: false, mode: "json" });
+/**
+ * Non-interactive path. `userTurns` models how many user messages the session has
+ * seen: the tool refuses a confirm redeemed in the same user turn that produced the
+ * preview, so a realistic caller must bump this between preview and confirm.
+ */
+const mockSession = (userTurns) => ({
+	getEntries: () =>
+		Array.from({ length: userTurns }, () => ({ type: "message", message: { role: "user" } })),
+});
+
+// Default: previews happen in user turn 1, confirms in turn 2 (a real user replied).
+// Tests that want to prove same-turn self-approval is refused pass userTurns explicitly.
+const call = async (params, cwd, userTurns = params?.confirm ? 2 : 1) => {
+	const res = await tool.execute("t", params, undefined, undefined, {
+		cwd,
+		hasUI: false,
+		mode: "json",
+		sessionManager: mockSession(userTurns),
+	});
 	return { text: res.content[0].text, details: res.details };
+};
+
+/** Preview in turn N, then confirm in turn N+1 — the only legitimate sequence. */
+const approveNextTurn = async (params, cwd, turn = 1) => {
+	const preview = await call(params, cwd, turn);
+	if (!preview.details?.token) return preview;
+	return call({ ...params, confirm: preview.details.token }, cwd, turn + 1);
 };
 
 /** Interactive (TUI/RPC) path: ctx.hasUI true, ctx.ui.confirm answers `answer`. */
@@ -409,6 +433,53 @@ console.log("\n== permission errors and partial failures ==");
 	check("the removable path WAS removed", !existsSync(ok), p2.text);
 	check("the locked path survived with an explicit error line", existsSync(locked) && p2.text.includes("errors (1)"), p2.text);
 	chmodSync(locked, 0o755);
+}
+
+// -------------------------------------------------- same-turn self-approval
+// Regression guard for a real incident: with the "never confirm in the same turn"
+// guideline removed, the model read its own preview and replayed the token inside
+// one turn, deleting 42 files with no human in the loop. The rule now lives in code.
+{
+	console.log("\n== same-turn self-approval ==");
+	const victim = join(SB, "selfapprove");
+	mkdirSync(victim, { recursive: true });
+	for (let i = 0; i < 5; i++) writeFileSync(join(victim, `f${i}.txt`), "x\n");
+	const p = { action: "remove", paths: victim, recursive: true };
+
+	const prev = await call(p, SB, 3);
+	check("preview issues a token", prev.details.status === "needs-approval" && !!prev.details.token, prev.text.slice(0, 120));
+
+	const same = await call({ ...p, confirm: prev.details.token }, SB, 3);
+	check("same-turn confirm is REFUSED", same.details.code === "SELF_APPROVAL_BLOCKED", JSON.stringify(same.details));
+	check("same-turn confirm changed nothing", existsSync(victim) && readdirSync(victim).length === 5, "files were deleted");
+	check("refusal names the missing approval", /same turn|not actually approved|NOT EXECUTED/i.test(same.text), same.text.slice(0, 160));
+	check("'approve in advance' is called out as insufficient", /approve in advance|don't ask me/i.test(same.text), same.text.slice(-200));
+
+	// Re-previewing inside the same turn must not advance the anchor and unlock it.
+	const rePrev = await call(p, SB, 3);
+	const replay = await call({ ...p, confirm: rePrev.details.token }, SB, 3);
+	check("re-preview in the same turn does NOT unlock the token", replay.details.code === "SELF_APPROVAL_BLOCKED", JSON.stringify(replay.details));
+	check("still nothing deleted after re-preview replay", existsSync(victim) && readdirSync(victim).length === 5, "files were deleted");
+
+	// A token nobody ever previewed cannot be redeemed either.
+	const noPrev = await call({ action: "remove", paths: join(SB, "selfapprove/f0.txt"), confirm: "fileops-000000000000" }, SB, 4);
+	check("unknown token is refused, not executed", noPrev.details.status !== "done" && existsSync(join(victim, "f0.txt")), JSON.stringify(noPrev.details));
+
+	// The legitimate sequence still works: preview in turn 3, user replies, confirm in turn 4.
+	const ok = await call({ ...p, confirm: prev.details.token }, SB, 4);
+	check("next-turn confirm EXECUTES", ok.details.status === "done", JSON.stringify(ok.details).slice(0, 200));
+	check("next-turn confirm actually removed the tree", !existsSync(victim), "tree survived");
+
+	// Explicit unattended opt-out stays available for automation.
+	const auto = join(SB, "unattended");
+	mkdirSync(auto, { recursive: true });
+	writeFileSync(join(auto, "a.txt"), "x\n");
+	const ap = { action: "remove", paths: auto, recursive: true };
+	const apPrev = await call(ap, SB, 5);
+	process.env.PI_FILE_OPS_UNATTENDED = "1";
+	const apRun = await call({ ...ap, confirm: apPrev.details.token }, SB, 5);
+	delete process.env.PI_FILE_OPS_UNATTENDED;
+	check("PI_FILE_OPS_UNATTENDED=1 allows same-turn confirm", apRun.details.status === "done" && !existsSync(auto), JSON.stringify(apRun.details));
 }
 
 // ------------------------------------------------------------------ teardown
