@@ -33,10 +33,30 @@ need no escaping. Reads run with `GIT_OPTIONAL_LOCKS=0`; all calls run with
 | `rev_parse` | resolve `ref`; with no `ref`: toplevel, git-dir, HEAD, branch | `ref` |
 | `stash_list` | `stash@{n} \| hash \| date \| subject` | `limit` |
 
+## Branch switching runs immediately (no gate)
+
+`checkout` / `switch` to a **branch or commit**, including `flags:['create-branch']`, execute
+on the first call. `details.approval` is `"ungated-switch"`.
+
+Why these and nothing else: git already refuses the move when it would overwrite local
+modifications, and switching back undoes it — so the gate bought no safety while costing a
+round-trip on the most frequent write in day-to-day work. The gate still applies the moment
+the command stops being reversible: `checkout` **with `paths`** (that discards uncommitted
+work), or any force-ish flag on the switch itself.
+
+```
+git {action:"switch", branch:"feature-x"}                 -> runs now
+git {action:"switch", branch:"new", flags:["create-branch"]} -> runs now
+git {action:"checkout", paths:["a.txt"]}                  -> PREVIEW ONLY + DANGER note
+```
+
+Covered by `ungated-switch.test.mjs` (16 assertions), which also pins the negative half:
+the paths form, `branch_delete`, `reset --hard` and `add` must still preview.
+
 ## Write actions (preview → human approval → run)
 
-`add`, `commit`, `checkout`, `switch`, `push`, `pull`, `fetch`, `stash_push`, `stash_pop`,
-`branch_delete`, `reset`.
+`add`, `commit`, `push`, `pull`, `fetch`, `stash_push`, `stash_pop`, `branch_delete`,
+`reset`, and `checkout` with `paths`.
 
 Flow:
 
@@ -60,7 +80,7 @@ Three independent gates make "just run it anyway" fail:
 
 Escape hatch for unattended automation: `PI_GIT_UNATTENDED=1` skips the user-turn
 requirement (token still required). `details.approval` records which path was used:
-`"ui-dialog" | "user-turn" | "unattended-env"`.
+`"ui-dialog" | "user-turn" | "unattended-env" | "ungated-switch"`.
 
 Loudly flagged flags: `--force`, `--force-with-lease`, `-D` (branch delete), `--no-verify`,
 `--amend`, `--allow-unrelated-histories`, `reset --hard`, `checkout -- <paths>`,

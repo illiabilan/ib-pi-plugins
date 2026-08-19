@@ -72,6 +72,30 @@ const ALL_ACTIONS = [...READ_ACTIONS, ...WRITE_ACTIONS] as const;
 type Action = (typeof ALL_ACTIONS)[number];
 const isWrite = (a: string): boolean => (WRITE_ACTIONS as readonly string[]).includes(a);
 
+/**
+ * Writes that run WITHOUT the approval gate: moving HEAD between branches, and
+ * creating a branch.
+ *
+ * Rationale: these are the only writes here that git itself already makes safe — it
+ * refuses to switch when the move would overwrite local modifications, and the change
+ * is undone by switching back. Gating them bought no safety and cost a whole
+ * round-trip on the most frequent write in day-to-day work.
+ *
+ * Deliberately still gated: `checkout -- <paths>` (discards uncommitted work),
+ * branch_delete, reset, commit, add, push, pull, fetch, stash. Any built command
+ * carrying a DANGER note or a force-ish flag falls back to the gate.
+ */
+function isUngatedSwitch(
+  action: string,
+  paths: string[],
+  built: { argv: string[]; dangers: string[] },
+): boolean {
+  if (action !== "checkout" && action !== "switch") return false;
+  if (paths.length > 0) return false; // the path form restores files over the working tree
+  if (built.dangers.length > 0) return false;
+  return !built.argv.some((a) => /^(-f|--force|--discard-changes|--ours|--theirs|--merge|-m)$/.test(a));
+}
+
 // ---------------------------------------------------------------------------
 // process plumbing
 // ---------------------------------------------------------------------------
@@ -539,7 +563,7 @@ const tokenFor = (argv: string[]): string =>
 
 const schema = Type.Object({
   action: StringEnum(ALL_ACTIONS, {
-    description: "Reads run immediately. Writes (add commit checkout switch push pull fetch stash_push stash_pop branch_delete reset) preview first, then need `confirm`.",
+    description: "Reads and branch switching (checkout/switch to a branch) run immediately. Other writes (add commit push pull fetch stash_push stash_pop branch_delete reset, and checkout with paths) preview first, then need `confirm`.",
   }),
   flags: Type.Optional(
     Type.Array(StringEnum(FLAG_LIST), {
@@ -592,13 +616,14 @@ export default function (pi: ExtensionAPI) {
 
 Reads (immediate): status (branch + upstream ahead/behind + grouped staged/unstaged/conflicted/untracked), diff (per-file +/- summary plus a patch truncated to ${DEF_MAX_LINES_PER_FILE} lines/file, ${DEF_MAX_TOTAL_LINES} total), log, show, branch, blame, merge_base, rev_parse, stash_list.
 
-Writes NEVER run on the first call: you get "PREVIEW ONLY" with the exact command, DANGER notes for destructive flags, and a confirm token; repeating the identical call plus confirm:"<token>" runs it. Same-turn token replay is refused ("self-approval-blocked") and a token is valid only for that exact command. Interactive sessions also show a dialog.
+checkout/switch to a branch (incl. flags:['create-branch']) or to a commit runs on the FIRST call, no token: git itself refuses the move if it would overwrite local changes, and switching back undoes it.
+Every other write NEVER runs on the first call — including checkout WITH paths, which discards uncommitted work: you get "PREVIEW ONLY" with the exact command, DANGER notes for destructive flags, and a confirm token; repeating the identical call plus confirm:"<token>" runs it. Same-turn token replay is refused ("self-approval-blocked") and a token is valid only for that exact command. Interactive sessions also show a dialog.
 
 Ex: {"action":"status"} | {"action":"diff","base":"origin/main","flags":["stat-only"]} | {"action":"diff","paths":["src/app.ts"],"maxLinesPerFile":400} | {"action":"commit","message":"Fix crash on empty input\n\nGuard the parser against a zero-length buffer."} -> preview, then the identical call plus "confirm":"a1b2c3d4" -> runs | {"action":"push","remote":"origin","branch":"feature/x","flags":["set-upstream"]}`,
-    promptSnippet: "All git operations (status/diff/log/show/branch/blame + preview-confirmed commit/push/pull/checkout/reset)",
+    promptSnippet: "All git operations (status/diff/log/show/branch/blame + immediate checkout/switch + preview-confirmed commit/push/pull/reset)",
     promptGuidelines: [
       "Use the git tool for every git operation instead of `git ...` in bash (pass repo:'<path>' for another repo rather than `cd X && git ...`): action='status' answers \"what changed / which branch\" in one call, and action='diff' returns a +/- summary with a truncated patch instead of thousands of lines — if a file was truncated, re-call with paths:[thatFile] and a bigger maxLinesPerFile rather than shelling out. Commit messages go in the plain multi-line `message` string, never a bash heredoc.",
-      "git write actions only PREVIEW and return a confirm token: end your turn there, quoting the previewed command and any DANGER lines verbatim, and repeat the call with confirm:'<token>' only after the user replies approving it. Same-turn replay is refused, invented tokens are refused, and running the same command through bash instead is a policy violation.",
+      "checkout/switch to a branch or commit executes straight away — do not ask for approval and do not wait for a token. Every OTHER write action only PREVIEWS and returns a confirm token: end your turn there, quoting the previewed command and any DANGER lines verbatim, and repeat the call with confirm:'<token>' only after the user replies approving it. Same-turn replay is refused, invented tokens are refused, and running the same command through bash instead is a policy violation.",
       "On a failed commit/push read the verbatim git output: a hook rejection means fix the reported problem, not re-run with flags:['no-verify'] (use that only if the user explicitly asks).",
     ],
     parameters: schema,
@@ -1042,7 +1067,10 @@ Ex: {"action":"status"} | {"action":"diff","base":"origin/main","flags":["stat-o
             const dangerBlock = built.dangers.length
               ? `\n${built.dangers.map((d) => `!! DANGER: ${d}`).join("\n")}\n`
               : "";
+            const unattended = process.env.PI_GIT_UNATTENDED === "1";
+            const ungated = isUngatedSwitch(p.action, paths, built);
 
+            if (!ungated) {
             if (p.confirm !== token) {
               const mismatch = !!p.confirm;
               // Remember this preview so a later confirm can be checked against the user turn count.
@@ -1081,7 +1109,6 @@ Ex: {"action":"status"} | {"action":"diff","base":"origin/main","flags":["stat-o
             // ---- token matches: now prove a HUMAN approved it ----
             const seenAt = previews.get(token);
             const turnsNow = userTurnCount(ctx);
-            const unattended = process.env.PI_GIT_UNATTENDED === "1";
             if (!ctx.hasUI && !unattended) {
               if (!seenAt)
                 return fin(
@@ -1120,6 +1147,7 @@ Ex: {"action":"status"} | {"action":"diff","base":"origin/main","flags":["stat-o
                   true,
                 );
             }
+            } // end approval gate (skipped for an ungated branch switch)
 
             const r = await runGit(root, built.argv, {
               signal,
@@ -1137,7 +1165,7 @@ Ex: {"action":"status"} | {"action":"diff","base":"origin/main","flags":["stat-o
                 : "";
               return fin(
                 `git ${p.action} FAILED (exit ${r.code}): ${preview}\n\n--- git output (verbatim) ---\n${limitLines(combined || "(no output)", 200, "rerun with fewer paths")}${hookHint}${timeoutHint}`,
-                { executed: true, exitCode: r.code, dangers: built.dangers, approval: ctx.hasUI ? "ui-dialog" : unattended ? "unattended-env" : "user-turn" },
+                { executed: true, exitCode: r.code, dangers: built.dangers, approval: ungated ? "ungated-switch" : ctx.hasUI ? "ui-dialog" : unattended ? "unattended-env" : "user-turn" },
                 true,
               );
             }
@@ -1163,7 +1191,7 @@ Ex: {"action":"status"} | {"action":"diff","base":"origin/main","flags":["stat-o
               ]
                 .filter(Boolean)
                 .join("\n"),
-              { executed: true, exitCode: 0, dangers: built.dangers, approval: ctx.hasUI ? "ui-dialog" : unattended ? "unattended-env" : "user-turn" },
+              { executed: true, exitCode: 0, dangers: built.dangers, approval: ungated ? "ungated-switch" : ctx.hasUI ? "ui-dialog" : unattended ? "unattended-env" : "user-turn" },
             );
           }
         }
