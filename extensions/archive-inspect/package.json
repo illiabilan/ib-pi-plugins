@@ -1,0 +1,12 @@
+{
+  "name": "archive-inspect",
+  "version": "1.0.0",
+  "description": "JVM artifact / archive inspector (jar/aar/apk/zip/tar + javap signatures + Gradle/Maven cache lookup) for the Pi agent",
+  "main": "index.ts",
+  "scripts": {
+    "build": "echo 'No build needed for this extension'"
+  },
+  "keywords": ["pi", "extension", "jar", "aar", "apk", "javap", "gradle", "archive"],
+  "author": "Pi Agent",
+  "license": "MIT"
+}
