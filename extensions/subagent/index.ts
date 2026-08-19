@@ -469,8 +469,8 @@ export default function (pi: ExtensionAPI) {
 			const agents = discovery.agents;
 			const confirmProjectAgents = params.confirmProjectAgents ?? true;
 
-			const hasChain = params.chain?.length ?? 0 > 0;
-			const hasTasks = params.tasks?.length ?? 0 > 0;
+			const hasChain = (params.chain?.length ?? 0) > 0;
+			const hasTasks = (params.tasks?.length ?? 0) > 0;
 			const hasSingle = Boolean(params.agent && params.task);
 			const modeCount = Number(hasChain) + Number(hasTasks) + Number(hasSingle);
 
