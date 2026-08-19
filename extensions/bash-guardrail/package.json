@@ -1,0 +1,9 @@
+{
+  "name": "bash-guardrail",
+  "version": "1.0.0",
+  "description": "Pi extension that intercepts bash tool calls and steers the agent to purpose-built tools (read/grep/list_files/git/file_ops/...) when they are an exact substitute. Registers no tool: zero prompt footprint.",
+  "main": "index.ts",
+  "keywords": ["pi", "pi-extension", "bash", "guardrail", "tool-routing", "hook"],
+  "author": "Pi Agent",
+  "license": "MIT"
+}
