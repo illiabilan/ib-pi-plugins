@@ -1,0 +1,12 @@
+{
+  "name": "git",
+  "version": "1.0.0",
+  "description": "Structured git tool for Pi: capped status/diff/log/show/branch/blame reads plus preview-and-confirm writes",
+  "main": "index.ts",
+  "scripts": {
+    "build": "echo 'No build needed for this extension'"
+  },
+  "keywords": ["pi", "git", "vcs", "extension"],
+  "author": "Pi Agent",
+  "license": "MIT"
+}
