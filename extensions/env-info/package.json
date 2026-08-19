@@ -1,0 +1,15 @@
+{
+  "name": "env-info",
+  "version": "1.0.0",
+  "description": "Environment probing tool for Pi: installed CLIs, env vars with always-on secret redaction, runtime facts, pi install layout, package versions",
+  "main": "index.ts",
+  "license": "MIT",
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "^0.84.2",
+    "@earendil-works/pi-tui": "^0.84.2",
+    "@types/node": "^26.1.2",
+    "jiti": "^2.7.0",
+    "typebox": "^1.3.10",
+    "typescript": "^7.0.2"
+  }
+}
