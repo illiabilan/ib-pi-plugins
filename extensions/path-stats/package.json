@@ -1,0 +1,30 @@
+{
+  "name": "path-stats",
+  "version": "1.0.0",
+  "description": "path_stats tool for Pi: pre-flight size/shape measurement of files and directories (wc/du/stat replacement)",
+  "main": "index.ts",
+  "license": "MIT",
+  "keywords": [
+    "pi",
+    "pi-coding-agent",
+    "path-stats",
+    "wc",
+    "du",
+    "stat",
+    "extension"
+  ],
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  },
+  "devDependencies": {
+    "@earendil-works/pi-ai": "^0.84.2",
+    "@earendil-works/pi-coding-agent": "^0.84.2",
+    "@earendil-works/pi-tui": "^0.84.2",
+    "@types/node": "^26.1.2",
+    "jiti": "^2.7.0",
+    "typebox": "^1.3.10",
+    "typescript": "^7.0.2"
+  }
+}
