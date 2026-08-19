@@ -1,0 +1,32 @@
+{
+  "name": "file-ops",
+  "version": "1.0.0",
+  "description": "Safe, previewable filesystem mutations (mkdir/copy/move/remove/symlink/chmod/touch) for the Pi agent",
+  "main": "index.ts",
+  "type": "module",
+  "keywords": [
+    "pi",
+    "pi-coding-agent",
+    "filesystem",
+    "safety",
+    "rm",
+    "mkdir",
+    "cp",
+    "mv"
+  ],
+  "license": "MIT",
+  "devDependencies": {
+    "@earendil-works/pi-ai": "^0.83.0",
+    "@earendil-works/pi-coding-agent": "^0.83.0",
+    "@earendil-works/pi-tui": "^0.83.0",
+    "@types/node": "^26.1.2",
+    "jiti": "^2.7.0",
+    "typebox": "^1.3.10",
+    "typescript": "^5.9.0"
+  },
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
+}
