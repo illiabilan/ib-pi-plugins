@@ -236,7 +236,53 @@ that `file_ops`'s "preview → user approves → then confirm" rule *is* its saf
 mechanism (unlike `git`, which enforces the same thing in code), and without it
 the agent self-approved its own preview token within a single turn.
 
-## Install everything globally
+## Installation
+
+Use `./install.sh` to install plugins globally (`~/.pi/agent`) or locally into any repository (`<repo>/.pi`).
+
+### Quick Start
+
+```bash
+# 1. Install globally (all extensions, skills, agents, prompts) via symlinks:
+./install.sh --global
+
+# 2. Install recommended global set globally:
+./install.sh --global --preset recommended
+
+# 3. Install locally into a specific repository:
+./install.sh --local /path/to/my-repo
+
+# 4. Install TypeScript tooling locally into a project:
+./install.sh --local /path/to/my-repo --preset typescript
+
+# 5. Install Android / Gradle tooling locally into a project:
+./install.sh --local /path/to/my-android-repo --preset android
+
+# 6. Interactive wizard (prompts for scope, method, presets):
+./install.sh
+```
+
+### Installation Options
+
+| Option | Description |
+|---|---|
+| `-g, --global` | Install globally to `~/.pi/agent` |
+| `-l, --local <PATH>` | Install locally into `<PATH>/.pi` |
+| `-s, --link` | Create symlinks to this repository (default) |
+| `-c, --copy` | Copy files instead of symlinking |
+| `-p, --preset <NAME>` | Preset: `all`, `recommended`, `bash-replacement`, `typescript`, `android`, `core` |
+| `--extensions [LIST]` | Comma-separated list of extensions to install |
+| `--skills [LIST]` | Comma-separated list of skills to install |
+| `--agents [LIST]` | Comma-separated list of agents to install |
+| `--prompts [LIST]` | Comma-separated list of prompts to install |
+| `--git-exclude` | Add `.pi/` to target repo's `.git/info/exclude` (default for local) |
+| `--npm` / `--skip-npm` | Run npm install for extensions with dependencies (default: on) |
+| `-u, --uninstall` | Remove installed plugins from target location |
+| `-n, --dry-run` | Preview actions without modifying filesystem |
+| `--list` | List all available extensions, skills, agents, and prompts |
+| `-h, --help` | Show complete help message |
+
+## Manual Installation (Alternative)
 
 ```bash
 mkdir -p ~/.pi/agent/extensions ~/.pi/agent/agents ~/.pi/agent/prompts ~/.pi/agent/skills
