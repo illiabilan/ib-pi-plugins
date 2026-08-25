@@ -1,0 +1,26 @@
+{
+  "name": "pi-statusbar",
+  "version": "1.0.0",
+  "description": "Segmented status bar / infobar for Pi: replaces the built-in footer with π 〉 model 〉 thinking 〉 project 〉 git 〉 context 〉 cost, width-aware and non-blocking. Registers no tool: zero prompt footprint.",
+  "type": "module",
+  "main": "index.ts",
+  "keywords": [
+    "pi",
+    "pi-extension",
+    "pi-coding-agent",
+    "footer",
+    "statusbar",
+    "statusline",
+    "tui"
+  ],
+  "author": "Pi Agent",
+  "license": "MIT",
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*",
+    "@types/node": "^22.0.0"
+  },
+  "pi": {
+    "extensions": ["./index.ts"]
+  }
+}
