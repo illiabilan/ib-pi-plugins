@@ -50,7 +50,7 @@ git {action:"switch", branch:"new", flags:["create-branch"]} -> runs now
 git {action:"checkout", paths:["a.txt"]}                  -> PREVIEW ONLY + DANGER note
 ```
 
-Covered by `ungated-switch.test.mjs` (16 assertions), which also pins the negative half:
+Covered by `ungated-switch.test.mjs` (16 assertions) and `ui-approval.test.mjs` (7), which also pins the negative half:
 the paths form, `branch_delete`, `reset --hard` and `add` must still preview.
 
 ## Write actions (preview → human approval → run)
@@ -67,7 +67,12 @@ Flow:
 3. After the user replies approving it, the agent repeats the identical call plus
    `confirm:"<token>"`.
 
-Three independent gates make "just run it anyway" fail:
+**Interactive sessions ask once.** When `ctx.hasUI`, the write call raises the confirm
+dialog immediately and runs (or doesn't) right there: no prose "may I?", no token, no extra
+turn. `details.approval` is `"ui-dialog"`. The token flow below is what headless
+(`-p` / `--mode json`) sessions get, where there is no dialog to click.
+
+Three independent gates make "just run it anyway" fail in the headless flow:
 
 - **Token binding** — the token is `sha256(argv)`; it authorizes only that exact command.
   A changed parameter or an invented token gives `token-mismatch` and no execution.
@@ -75,8 +80,8 @@ Three independent gates make "just run it anyway" fail:
   preview is refused (`self-approval-blocked`). Approval requires a new user message in the
   session, or a TUI/RPC confirm dialog. Confirming a command whose preview was never issued
   in this process gives `no-preview`.
-- **Interactive dialog** — when `ctx.hasUI`, the user also gets a `ctx.ui.confirm` dialog
-  (titled `⚠ DANGEROUS` when danger flags are present).
+- **Interactive dialog** — with `ctx.hasUI` this *replaces* the token flow entirely
+  (titled `⚠ DANGEROUS` when danger flags are present); declining executes nothing.
 
 Escape hatch for unattended automation: `PI_GIT_UNATTENDED=1` skips the user-turn
 requirement (token still required). `details.approval` records which path was used:
