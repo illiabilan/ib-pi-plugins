@@ -561,7 +561,7 @@ export default function (pi: ExtensionAPI) {
 Read: auth_status, repo_info, pr_list (author/state/base/search), pr_view (number, or the current branch's PR: state, base<-head, checks, reviews, body), pr_diff (per-file stat; patch:true for the raw patch), pr_checks, search_prs, search_issues, issue_view.
 Write: pr_create, pr_edit, pr_comment, pr_ready, pr_merge, issue_comment.
 
-Writes never auto-run. A write call without confirm_token executes NOTHING: it returns the exact resolved payload (base, head, title, full body, draft, reviewers, merge method) + a one-time confirm_token bound to a hash of that payload. Show the payload to the user, get explicit approval, then repeat the identical call with confirm_token. Any change to the payload (even one body character) voids the token and yields a fresh preview.
+Writes never auto-run, but you do NOT ask for permission in prose first: just call the action. In an interactive session the user gets a confirm dialog with the resolved payload and decides there — one decision, no extra turn. In a non-interactive session the call instead returns the payload + a one-time confirm_token bound to a hash of it; relay that and repeat the identical call with confirm_token once the user approves. Any change to the payload (even one body character) voids the token.
 
 Examples:
   {"action":"pr_view"}   {"action":"pr_list","author":"@me","limit":5}   {"action":"search_prs","query":"PROJ-48283"}
@@ -572,7 +572,7 @@ Every result ends with "gh_status:" — ok | preview_pending_approval | refused_
     promptSnippet: "GitHub PRs/issues via gh CLI: view/list/search/diff/checks + preview-gated PR create/edit/comment/merge",
     promptGuidelines: [
       "Use gh for anything GitHub (PRs, issues, checks, PR search) instead of running the `gh` CLI or `curl api.github.com` through bash — gh takes title/body as plain parameters and passes them to the CLI over argv/stdin, so multi-line bodies with backticks, quotes or emoji need no shell escaping.",
-      "gh write actions (pr_create, pr_edit, pr_comment, pr_ready, pr_merge, issue_comment) mutate a real, externally visible GitHub repo. Call them first WITHOUT confirm_token, show the returned payload preview to the user verbatim, and only repeat the call with confirm_token after the user explicitly approves. Never invent or reuse a confirm_token, and never call a write action twice in one turn.",
+      "gh write actions (pr_create, pr_edit, pr_comment, pr_ready, pr_merge, issue_comment) mutate a real, externally visible GitHub repo, so the tool itself asks the user — do not pre-ask in prose, and do not summarize the payload before calling. Call the action once with the full parameters: interactive sessions show a confirm dialog, and if the reply instead comes back as a preview + confirm_token, relay it verbatim and repeat the call with the token after the user approves. Never invent or reuse a confirm_token, and never call a write action twice in one turn.",
       "When a gh result ends with gh_status: preview_pending_approval, nothing was created or changed — do not report success and do not retry; relay the preview and wait for the user.",
       "When a gh result ends with gh_status: auth_error, tell the user to run `gh auth login` (or the exact `gh auth refresh -s ...` command quoted in the output) and stop; when it ends with gh_status: not_installed, tell them to install the GitHub CLI. Do not retry either case.",
       "When a gh result ends with gh_status: no_remote, the working directory has no GitHub remote: pass repo:\"OWNER/REPO\" explicitly instead of retrying the same call.",
@@ -1013,6 +1013,38 @@ Every result ends with "gh_status:" — ok | preview_pending_approval | refused_
 
         const token = tokenFor(params.action, plan.payload);
 
+        /** Send it. Shared by the interactive path and the token-approved headless path. */
+        const execApproved = async () => {
+          pending.delete(token); // single use, consumed even if gh then fails
+          const r = await gh(plan.args, { cwd, signal, stdin: plan.bodyStdin, timeout: 120_000 });
+          if (r.code !== 0) {
+            const c = classify(r, params.action);
+            return fin(`${plan.successNote ?? "Write"} FAILED — nothing may have changed.\n\n${c.message}`, c.status);
+          }
+          return fin(
+            [
+              `${plan.successNote}: ${(r.stdout + r.stderr).trim() || "(gh reported no output)"}`,
+              "",
+              `Executed: gh ${plan.args.join(" ")}${plan.bodyStdin ? ` (body: ${plan.bodyStdin.length} chars via stdin)` : ""}`,
+            ].join("\n"),
+          );
+        };
+
+        /* Interactive session: the dialog IS the approval. One decision, on the first call —
+           previewing in prose and then popping a dialog made the user approve twice. */
+        if (ctx.hasUI) {
+          const ok = await ctx.ui.confirm(
+            `gh ${params.action}${plan.payload.repo ? ` on ${plan.payload.repo}` : ""}`,
+            [plan.warning ?? "", "", ...plan.previewLines].join("\n").slice(0, 4000),
+          );
+          if (!ok)
+            return fin(
+              `User declined the gh ${params.action}. Nothing was sent to GitHub. Ask what to change instead of retrying.`,
+              "declined",
+            );
+          return await execApproved();
+        }
+
         /* Preview step: no confirm_token, or one that does not match THIS payload. */
         if (params.confirm_token !== token) {
           pending.set(token, { action: params.action, createdAt: Date.now(), payload: JSON.stringify(plan.payload) });
@@ -1047,19 +1079,7 @@ Every result ends with "gh_status:" — ok | preview_pending_approval | refused_
             "refused_unapproved",
           );
 
-        if (ctx.hasUI) {
-          const ok = await ctx.ui.confirm(
-            `gh ${params.action}${plan.payload.repo ? ` on ${plan.payload.repo}` : ""}`,
-            [plan.warning ?? "", "", ...plan.previewLines].join("\n").slice(0, 4000),
-          );
-          if (!ok) {
-            pending.delete(token);
-            return fin(
-              `User declined the gh ${params.action}. Nothing was sent to GitHub. Ask what to change instead of retrying.`,
-              "declined",
-            );
-          }
-        } else if (process.env.PI_GH_ALLOW_UNATTENDED_WRITES !== "1") {
+        if (process.env.PI_GH_ALLOW_UNATTENDED_WRITES !== "1") {
           // No interactive UI (print/JSON mode) => no human could have seen the preview in-session.
           return fin(
             [
@@ -1072,19 +1092,7 @@ Every result ends with "gh_status:" — ok | preview_pending_approval | refused_
           );
         }
 
-        pending.delete(token); // single use, consumed even if gh then fails
-        const r = await gh(plan.args, { cwd, signal, stdin: plan.bodyStdin, timeout: 120_000 });
-        if (r.code !== 0) {
-          const c = classify(r, params.action);
-          return fin(`${plan.successNote ?? "Write"} FAILED — nothing may have changed.\n\n${c.message}`, c.status);
-        }
-        return fin(
-          [
-            `${plan.successNote}: ${(r.stdout + r.stderr).trim() || "(gh reported no output)"}`,
-            "",
-            `Executed: gh ${plan.args.join(" ")}${plan.bodyStdin ? ` (body: ${plan.bodyStdin.length} chars via stdin)` : ""}`,
-          ].join("\n"),
-        );
+        return await execApproved();
       } catch (e: any) {
         if (e?.name === "AbortError") return fin("Cancelled.", "error");
         return fin(`gh tool failed: ${e?.message ?? String(e)}`, "error");

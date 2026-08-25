@@ -97,11 +97,23 @@ Write: `pr_create`, `pr_edit`, `pr_comment`, `pr_ready`, `pr_merge`, `issue_comm
 
 ## The approval gate (and why the bash guard exists)
 
+**Interactive session (`ctx.hasUI`) — one decision:**
+
+```
+call 1  {"action":"pr_create", ...}  -> ctx.ui.confirm dialog with the resolved payload
+                                        approve -> sent | decline -> nothing sent
+```
+
+No prose "may I?", no token, no second call. Verified by `ui-approval.test.mjs`.
+
+**Headless session (`-p`, `--mode json`) — no dialog exists, so the payload goes through chat:**
+
 ```
 call 1  {"action":"pr_create", ...}                  -> gh_status: preview_pending_approval
                                                         (payload + confirm_token, nothing sent)
    user reads the payload and approves
-call 2  {"action":"pr_create", ...same..., confirm_token} -> ctx.ui.confirm -> executes
+call 2  {"action":"pr_create", ...same..., confirm_token} -> executes only with
+                                                        PI_GH_ALLOW_UNATTENDED_WRITES=1
 ```
 
 Properties, each verified by test:
