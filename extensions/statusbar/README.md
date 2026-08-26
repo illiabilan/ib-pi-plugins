@@ -33,7 +33,10 @@ message's `usage.totalTokens` itself.
 
 `render()` never wraps and never exceeds the width it is given. Two phases:
 
-1. **Abbreviate.** Four tiers progressively shorten values before anything disappears:
+0. **Nothing.** On a terminal wide enough, every value is shown in full — no ellipsis is
+   spent while there is room (tier 0 caps exist only as a sanity bound: model 64, branch 64,
+   dir 40 columns).
+1. **Abbreviate.** Further tiers progressively shorten values before anything disappears:
    model id (28 → 18 → 12 → 10 cols, dropping `provider/` prefixes, `-20250929` date
    suffixes and a redundant `claude-` prefix), branch (24 → 10 cols, keeping the *tail*,
    which is where a branch name carries its meaning), directory (20 → 8 cols), and finally
