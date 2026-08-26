@@ -11,6 +11,19 @@ git guard active (120s timeout)
 
 Registers **no tool** — zero prompt/context footprint. It only draws.
 
+## Placement
+
+By default the bar sits **above the input**, drawn as an `aboveEditor` widget, and pi's
+built-in footer is suppressed so the cwd/branch line is not repeated under the input.
+`/statusbar footer` moves it below the input instead; `/statusbar above` moves it back, and
+the choice is persisted.
+
+Mechanically both modes mount the same footer component, because `setFooter()` is the only
+place pi hands out `FooterDataProvider` (git branch + other extensions' `setStatus` texts).
+In `above` mode that footer renders an empty array and the widget draws the bar; in `footer`
+mode the footer draws it and no widget is registered. A host UI without `setWidget` falls
+back to footer placement automatically.
+
 ## Segments
 
 | Order | Segment | Shows | Live update trigger |

@@ -74,8 +74,12 @@ export interface Snapshot {
 	cost: number;
 }
 
+/** Where the bar is drawn. "above" sits on top of the input, "footer" below it. */
+export type Placement = "above" | "footer";
+
 export interface StatusbarConfig {
 	enabled: boolean;
+	placement: Placement;
 	segments: Record<SegKey | "statuses", boolean>;
 }
 
@@ -128,6 +132,7 @@ const TIERS: readonly Tier[] = [
 	{ model: 10, branch: 10, dir: 8, counters: "min", shorten: 2 },
 ];
 
+const WIDGET_KEY = "statusbar";
 const REFRESH_MS = 5000;
 const GIT_TIMEOUT_MS = 3000;
 const RENDER_COALESCE_MS = 60;
@@ -135,6 +140,7 @@ const EVENT_DEBOUNCE_MS = 300;
 
 const DEFAULT_CONFIG: StatusbarConfig = {
 	enabled: true,
+	placement: "above",
 	segments: { pi: true, model: true, think: true, project: true, git: true, context: true, extra: true, statuses: true },
 };
 
@@ -477,10 +483,15 @@ export function configPath(): string {
 }
 
 export function normalizeConfig(raw: unknown): StatusbarConfig {
-	const cfg: StatusbarConfig = { enabled: DEFAULT_CONFIG.enabled, segments: { ...DEFAULT_CONFIG.segments } };
+	const cfg: StatusbarConfig = {
+		enabled: DEFAULT_CONFIG.enabled,
+		placement: DEFAULT_CONFIG.placement,
+		segments: { ...DEFAULT_CONFIG.segments },
+	};
 	if (!raw || typeof raw !== "object") return cfg;
 	const o = raw as Record<string, unknown>;
 	if (typeof o.enabled === "boolean") cfg.enabled = o.enabled;
+	if (o.placement === "above" || o.placement === "footer") cfg.placement = o.placement;
 	const segs = o.segments;
 	if (segs && typeof segs === "object") {
 		for (const key of Object.keys(cfg.segments) as (SegKey | "statuses")[]) {
@@ -709,6 +720,45 @@ export default function statusbar(pi: ExtensionAPI) {
 		ctxRef = ctx;
 		mounted = true;
 		const gen = ++mountGen;
+		// setWidget is what puts the bar above the input. If the host UI does not expose it
+		// (older pi, or a UI surface that only implements the footer), fall back to the footer
+		// rather than rendering nothing at all.
+		const canWidget = typeof (ctx.ui as { setWidget?: unknown }).setWidget === "function";
+		const above = cfg.placement === "above" && canWidget;
+
+		// The bar is drawn by whichever component the placement selects, but the FOOTER is
+		// always the one mounted: its factory is the only place pi hands out FooterDataProvider
+		// (git branch + other extensions' setStatus texts). When drawing above the editor the
+		// footer therefore renders nothing at all — which also suppresses pi's built-in footer,
+		// so the cwd/branch line is not duplicated under the input.
+		const drawBar = (theme: ThemeLike, width: number, statuses: RenderArgs["statuses"]): string[] => {
+			// FAIL OPEN. This runs on every frame; an exception here would take the whole TUI
+			// down, so a bug in a segment must degrade to a minimal bar, never throw.
+			try {
+				return renderStatusBar({ snap, cfg, theme, width, statuses });
+			} catch {
+				try {
+					return [truncateToWidth(theme.fg("accent", GLYPH.pi), Math.max(0, width))];
+				} catch {
+					return [];
+				}
+			}
+		};
+
+		if (above) {
+			ctx.ui.setWidget(
+				WIDGET_KEY,
+				(tui, theme) => {
+					tuiRef = tui;
+					return {
+						render: (width: number) =>
+							drawBar(theme as ThemeLike, width, footerDataRef?.getExtensionStatuses()),
+						invalidate() {},
+					};
+				},
+				{ placement: "aboveEditor" },
+			);
+		}
 
 		ctx.ui.setFooter((tui, theme, footerData) => {
 			tuiRef = tui;
@@ -729,25 +779,8 @@ export default function statusbar(pi: ExtensionAPI) {
 			});
 
 			return {
-				render(width: number): string[] {
-					// FAIL OPEN. This runs on every frame; an exception here would take the whole
-					// TUI down, so a bug in a segment must degrade to a minimal bar, never throw.
-					try {
-						return renderStatusBar({
-							snap,
-							cfg,
-							theme,
-							width,
-							statuses: footerData.getExtensionStatuses(),
-						});
-					} catch {
-						try {
-							return [truncateToWidth(theme.fg("accent", GLYPH.pi), Math.max(0, width))];
-						} catch {
-							return [];
-						}
-					}
-				},
+				render: (width: number): string[] =>
+					above ? [] : drawBar(theme as ThemeLike, width, footerData.getExtensionStatuses()),
 				invalidate() {
 					// Nothing cached per-theme; pi re-renders after a theme switch.
 				},
@@ -769,7 +802,12 @@ export default function statusbar(pi: ExtensionAPI) {
 		mounted = false;
 		stopTimers();
 		try {
-			if (ctx && ctx.mode === "tui" && ctx.hasUI) ctx.ui.setFooter(undefined);
+			if (ctx && ctx.mode === "tui" && ctx.hasUI) {
+				if (typeof (ctx.ui as { setWidget?: unknown }).setWidget === "function") {
+					ctx.ui.setWidget(WIDGET_KEY, undefined);
+				}
+				ctx.ui.setFooter(undefined);
+			}
 		} catch {
 			/* UI already gone */
 		}
@@ -832,7 +870,8 @@ export default function statusbar(pi: ExtensionAPI) {
 
 	function stateLine(): string {
 		const on = SEG_KEYS.filter((k) => cfg.segments[k]);
-		return `statusbar ${cfg.enabled ? "on" : "off"} — segments: ${on.join(", ") || "(none)"}`;
+		const where = cfg.placement === "above" ? "above the input" : "footer";
+		return `statusbar ${cfg.enabled ? "on" : "off"} (${where}) — segments: ${on.join(", ") || "(none)"}`;
 	}
 
 	async function pickSegments(ctx: ExtensionContext): Promise<void> {
@@ -852,9 +891,9 @@ export default function statusbar(pi: ExtensionAPI) {
 	}
 
 	pi.registerCommand("statusbar", {
-		description: "Toggle the segmented status bar (on|off|segments|<segment>|status)",
+		description: "Toggle the segmented status bar (on|off|above|footer|segments|<segment>|status)",
 		getArgumentCompletions: (prefix: string) => {
-			const opts = ["on", "off", "segments", "status", ...SEG_KEYS];
+			const opts = ["on", "off", "above", "footer", "segments", "status", ...SEG_KEYS];
 			const items = opts.filter((o) => o.startsWith(prefix)).map((o) => ({ value: o, label: o }));
 			return items.length ? items : null;
 		},
@@ -873,6 +912,23 @@ export default function statusbar(pi: ExtensionAPI) {
 
 			if (arg === "status") {
 				ctx.ui.notify(stateLine(), "info");
+				return;
+			}
+			if (arg === "above" || arg === "footer") {
+				const place: Placement = arg;
+				if (cfg.placement !== place) {
+					cfg.placement = place;
+					saveConfig(cfg);
+					if (cfg.enabled) {
+						// Remount: placement decides which component draws and which renders empty.
+						unmount(ctx);
+						mount(ctx);
+					}
+				}
+				ctx.ui.notify(
+					place === "above" ? "statusbar above the input" : "statusbar in the footer (below the input)",
+					"info",
+				);
 				return;
 			}
 			if (arg === "segments") {

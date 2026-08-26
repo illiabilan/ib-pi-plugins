@@ -60,6 +60,7 @@ const footerData = {
 };
 
 let footer;
+let widget; // { key, component, options } - mirrors pi's aboveEditor widget slot
 const notifications = [];
 function makeCtx(cwd, theme = mockTheme) {
 	return {
@@ -85,9 +86,27 @@ function makeCtx(cwd, theme = mockTheme) {
 				if (footer?.dispose) footer.dispose();
 				footer = factory ? factory(tui, theme, footerData) : undefined;
 			},
+			// mirrors pi's setWidget: a component factory or undefined to clear the slot
+			setWidget: (key, content, options) => {
+				if (content === undefined) {
+					if (widget?.component?.dispose) widget.component.dispose();
+					widget = undefined;
+					return;
+				}
+				const component = typeof content === "function" ? content(tui, theme) : { render: () => content };
+				widget = { key, component, options };
+			},
 		},
 	};
 }
+
+/**
+ * The bar is drawn by the widget when placement is "above" (the default) and by the footer
+ * when it is "footer"; the other component renders empty on purpose. Tests assert on
+ * whichever one is currently drawing.
+ */
+const active = () => (widget?.component ?? footer);
+const activeRender = (w) => active()?.render(w) ?? [];
 
 const REPO = "/tmp/sbar-git/dirty";
 ext.default(pi);
@@ -95,13 +114,13 @@ const baseIntervals = liveIntervals.size;
 const ctx = makeCtx(REPO);
 
 await fire("session_start", { reason: "startup" }, ctx);
-if (!footer) r.fail("session_start did not mount the footer");
-else r.ok("footer mounted on session_start");
+if (!active()) r.fail("session_start did not mount the bar");
+else r.ok("bar mounted on session_start");
 if (subscriptions !== 1) r.fail(`expected 1 branch subscription, got ${subscriptions}`);
 else r.ok("exactly 1 branch subscription");
 
 await sleep(1500);
-const bar = footer.render(120).join("");
+const bar = activeRender(120).join("");
 if (!/\*1/.test(bar) || !/\+1/.test(bar) || !/\?2/.test(bar)) r.fail(`git counters missing after refresh: ${strip(bar)}`);
 else r.ok(`git counters refreshed out of band: ${strip(bar).split("\n").pop()}`);
 if (renderCount === 0) r.fail("no requestRender after the snapshot changed");
@@ -111,7 +130,7 @@ else r.ok(`requestRender fired ${renderCount}x after the git snapshot changed`);
 writeFileSync(`${REPO}/mid-session.txt`, "x\n");
 await fire("tool_execution_end", { toolName: "write", toolCallId: "t1" }, ctx);
 await sleep(1500);
-if (!/\?3/.test(footer.render(120).join(""))) r.fail("a mid-session file write was not picked up");
+if (!/\?3/.test(activeRender(120).join(""))) r.fail("a mid-session file write was not picked up");
 else r.ok("mid-session file write reflected in the git segment (?2 -> ?3)");
 rmSync(`${REPO}/mid-session.txt`, { force: true });
 
@@ -126,11 +145,11 @@ else r.ok(`requestRender coalesced: ${renderCount} render(s) for 200 model_selec
 // then the next refresh reconciles it with git's own authoritative answer.
 footerData._branch = "feature/x";
 for (const cb of branchCbs) cb();
-const immediate = strip(footer.render(120).join(""));
+const immediate = strip(activeRender(120).join(""));
 if (!immediate.includes("feature/x")) r.fail(`branch change not shown immediately: ${immediate}`);
 else r.ok("branch change from onBranchChange is shown on the very next frame");
 await sleep(600);
-const reconciled = strip(footer.render(120).join(""));
+const reconciled = strip(activeRender(120).join(""));
 if (!reconciled.includes("⑂ main")) r.fail(`git did not reconcile the branch name: ${reconciled}`);
 else r.ok("a following refresh reconciles the branch with git's own answer");
 footerData._branch = "main";
@@ -146,13 +165,13 @@ if (liveIntervals.size - baseIntervals > 1) r.fail(`interval leak: ${liveInterva
 else r.ok(`20 rapid toggles: at most 1 live interval (${liveIntervals.size - baseIntervals})`);
 
 await cmd.handler("off", ctx);
-if (footer) r.fail("/statusbar off left a footer mounted");
+if (active()) r.fail("/statusbar off left the bar mounted");
 else if (subscriptions !== 0) r.fail(`subscription leak after off: ${subscriptions}`);
 else if (liveIntervals.size - baseIntervals !== 0) r.fail(`interval leak after off: ${liveIntervals.size - baseIntervals}`);
 else r.ok("/statusbar off restores the built-in footer and releases subscription + interval");
 
 await cmd.handler("on", ctx);
-if (!footer) r.fail("/statusbar on did not remount");
+if (!active()) r.fail("/statusbar on did not remount");
 await fire("session_shutdown", {}, ctx);
 await sleep(50);
 if (liveIntervals.size - baseIntervals !== 0) r.fail("interval leak after session_shutdown");
@@ -185,14 +204,14 @@ await cmd.handler("on", makeCtx(REPO));
 footerData._branch = null;
 await fire("session_start", { reason: "new" }, makeCtx("/tmp/sbar-git/plain"));
 await sleep(1300);
-if (/⑂/.test(footer ? footer.render(120).join("") : "")) r.fail("git segment shown in a non-repo");
+if (/⑂/.test(activeRender(120).join(""))) r.fail("git segment shown in a non-repo");
 else r.ok("git segment hidden in a non-repo directory");
 
 // detached HEAD, end to end
 footerData._branch = "detached";
 await fire("session_start", { reason: "new" }, makeCtx("/tmp/sbar-git/detached"));
 await sleep(1500);
-const det = strip(footer.render(120).join(""));
+const det = strip(activeRender(120).join(""));
 if (!/detached@[0-9a-f]{7}/.test(det)) r.fail(`detached HEAD not shown as detached@<oid>: ${det}`);
 else r.ok(`detached HEAD rendered as ${/⑂ [^ ]+/.exec(det)?.[0]}`);
 
@@ -200,10 +219,10 @@ else r.ok(`detached HEAD rendered as ${/⑂ [^ ]+/.exec(det)?.[0]}`);
 footerData._branch = "main";
 await fire("session_start", { reason: "new" }, makeCtx(REPO));
 await sleep(1300);
-if (!/\*\d/.test(strip(footer.render(120).join("")))) r.fail("precondition: counters missing before the failure case");
+if (!/\*\d/.test(strip(activeRender(120).join("")))) r.fail("precondition: counters missing before the failure case");
 await fire("session_start", { reason: "new" }, makeCtx("/tmp/sbar-git/plain"));
 await sleep(1300);
-const after = strip(footer.render(120).join(""));
+const after = strip(activeRender(120).join(""));
 if (!/⑂ main/.test(after)) r.fail(`git failure hid the branch: ${after}`);
 else if (/\*\d/.test(after)) r.fail(`git failure kept stale counters: ${after}`);
 else r.ok("git failure keeps the provider branch and drops the counters");
@@ -214,11 +233,11 @@ setTheme("dark");
 footerData._branch = "main";
 await fire("session_start", { reason: "new" }, makeCtx(REPO, liveTheme));
 await sleep(400);
-const darkFrame = footer.render(120).join("\u0001");
+const darkFrame = activeRender(120).join("\u0001");
 setTheme("light");
-footer.invalidate();
-const lightFrame = footer.render(120).join("\u0001");
-if (darkFrame === lightFrame) r.fail("mounted footer did not follow a runtime theme switch");
+active().invalidate?.();
+const lightFrame = activeRender(120).join("\u0001");
+if (darkFrame === lightFrame) r.fail("mounted bar did not follow a runtime theme switch");
 else if (strip(darkFrame) !== strip(lightFrame)) r.fail("theme switch changed the visible text, not only colours");
 else r.ok("mounted footer follows a runtime theme switch (same text, new colours)");
 setTheme("dark");

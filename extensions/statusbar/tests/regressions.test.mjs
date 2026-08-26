@@ -71,5 +71,58 @@ const plain = (s) => s.replace(/\u001b\[[0-9;]*m/g, "");
   f.dispose?.();
 }
 
+// 3. Placement: the bar belongs ABOVE the input, and must not be drawn twice.
+{
+  let ff, widget, cmd;
+  const h = {};
+  factory({
+    registerCommand: (n, c) => { if (n === "statusbar") cmd = c; },
+    registerShortcut(){}, registerTool(){}, on: (e, fn) => (h[e] = fn),
+  });
+  const ui = {
+    setFooter: (f) => (ff = f),
+    setWidget: (key, content) => { widget = content === undefined ? undefined : { key, content }; },
+    notify(){}, select: async () => undefined,
+    getTheme: () => "dark", getAllThemes: () => ["dark"],
+  };
+  const ctx = {
+    cwd: "/tmp", mode: "tui", hasUI: true,
+    model: { id: "claude-opus-5", provider: "anthropic", contextWindow: 1000000 },
+    thinkingLevel: "high",
+    sessionManager: { getBranch: () => [], getEntries: () => [] },
+    getContextUsage: () => ({ tokens: 1000, contextWindow: 1000000, percent: 0.1 }),
+    ui,
+  };
+  await h.session_start?.({}, ctx);
+  ck("default placement registers a widget above the editor", !!widget && widget.key === "statusbar", JSON.stringify(widget?.key));
+  const footerComp = ff?.({ requestRender(){} }, mockTheme, {
+    getGitBranch: () => "main", onBranchChange: () => () => {}, getExtensionStatuses: () => new Map(),
+  });
+  ck("the footer renders NOTHING while the widget draws (no duplicate bar)", (footerComp?.render(120) ?? []).length === 0);
+  const widgetComp = widget.content({ requestRender(){} }, mockTheme);
+  const drawn = plain(widgetComp.render(120).at(-1) ?? "");
+  ck("the widget draws the actual bar", /π/.test(drawn) && /think:high/.test(drawn), drawn);
+
+  // switching to the footer flips which component draws
+  await cmd.handler("footer", ctx);
+  ck("/statusbar footer clears the widget", widget === undefined);
+  const footer2 = ff({ requestRender(){} }, mockTheme, {
+    getGitBranch: () => "main", onBranchChange: () => () => {}, getExtensionStatuses: () => new Map(),
+  });
+  ck("/statusbar footer makes the footer draw the bar", /π/.test(plain(footer2.render(120).at(-1) ?? "")));
+  await cmd.handler("above", ctx);
+  ck("/statusbar above puts the widget back", !!widget);
+
+  // a UI without setWidget must still show the bar, in the footer
+  let ff2;
+  const h2 = {};
+  factory({ registerCommand(){}, registerShortcut(){}, registerTool(){}, on: (e, fn) => (h2[e] = fn) });
+  await h2.session_start?.({}, { ...ctx, ui: { ...ui, setWidget: undefined, setFooter: (f) => (ff2 = f) } });
+  const fallback = ff2?.({ requestRender(){} }, mockTheme, {
+    getGitBranch: () => "main", onBranchChange: () => () => {}, getExtensionStatuses: () => new Map(),
+  });
+  ck("falls back to the footer when the host has no setWidget", /π/.test(plain(fallback?.render(120).at(-1) ?? "")));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
