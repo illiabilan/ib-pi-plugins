@@ -25,7 +25,7 @@ import type {
 	ReadonlyFooterDataProvider,
 } from "@earendil-works/pi-coding-agent";
 import type { TUI } from "@earendil-works/pi-tui";
-import { sliceByColumn, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { sliceByColumn, stripTerminalSequences, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -119,6 +119,9 @@ interface Tier {
 }
 
 const TIERS: readonly Tier[] = [
+	// Tier 0 is "a wide terminal has room, show it whole": nothing is abbreviated until the
+	// line actually stops fitting. Without it a 40-char branch was cut on a 200-col terminal.
+	{ model: 64, branch: 64, dir: 40, counters: "full", shorten: 0 },
 	{ model: 28, branch: 24, dir: 20, counters: "full", shorten: 0 },
 	{ model: 18, branch: 16, dir: 14, counters: "full", shorten: 1 },
 	{ model: 12, branch: 12, dir: 10, counters: "dirty", shorten: 2 },
@@ -151,9 +154,18 @@ export const SEGMENT_HELP: Record<SegKey | "statuses", string> = {
 // ---------------------------------------------------------------------------
 
 /** Strip control characters / escape sequences so untrusted text can never inject ANSI. */
+/**
+ * Strip ANSI escape SEQUENCES before the leftover control characters.
+ *
+ * Extension statuses arrive pre-coloured (pi's own footer prints them as-is), so removing
+ * only the \u001b byte left the payload behind and the bar printed a literal
+ * "[38;2;90;128;128m" — observed with the MCP adapter's status. pi-tui's own
+ * stripTerminalSequences handles CSI/OSC/hyperlinks and is the same implementation the
+ * width helpers use, so widths and stripping can never disagree.
+ */
 export function sanitize(text: string): string {
 	// biome-ignore lint/suspicious/noControlCharactersInRegex: stripping control chars is the point
-	return text.replace(/[\u0000-\u001f\u007f-\u009f]/g, " ").replace(/\s+/g, " ").trim();
+	return stripTerminalSequences(text).replace(/[\u0000-\u001f\u007f-\u009f]/g, " ").replace(/\s+/g, " ").trim();
 }
 
 /**

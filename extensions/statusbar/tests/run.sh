@@ -6,7 +6,7 @@ set -u
 cd "$(dirname "$0")/.." || exit 1
 export FORCE_COLOR=3
 fail=0
-for t in git render io lifecycle theme perf; do
+for t in git render regressions io lifecycle theme perf; do
   echo "=== $t ==="
   if ! node "tests/$t.test.mjs" "$@"; then
     fail=1
