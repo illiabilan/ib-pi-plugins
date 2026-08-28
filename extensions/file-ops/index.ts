@@ -1095,10 +1095,35 @@ Every preview ends with "counts: exact" (whole tree measured) or "counts: LOWER-
 
 Ex: {"action":"remove","paths":"node_modules","recursive":true} (rm -rf) | {"action":"mkdir","paths":["build/tmp","build/out"]} | {"action":"copy","from":"dist","to":"/tmp/backup","recursive":true,"overwrite":"always"} | {"action":"move","from":"old.ts","to":"src/new.ts"} | {"action":"remove","paths":"tmp/*.log","dryRun":true}`;
 
+/**
+ * Serialize approval dialogs process-wide.
+ *
+ * pi runs the tool calls of one assistant message in parallel unless a tool sets
+ * executionMode:"sequential" (which forces the whole batch sequential). The TUI has
+ * exactly ONE dialog slot: showExtensionSelector() overwrites this.extensionSelector
+ * and clears the editor container, so a second concurrent ctx.ui.confirm() evicts the
+ * first from the widget tree and its promise NEVER resolves — that tool call never
+ * returns and the whole turn deadlocks. executionMode covers the in-batch case; this
+ * queue also covers dialogs raised concurrently from elsewhere (a subagent, an event
+ * handler, another gated extension). It lives on globalThis so all extensions in the
+ * process share one chain.
+ */
+function uiExclusive<T>(fn: () => Promise<T>): Promise<T> {
+	const g = globalThis as { __piUiDialogQueue?: Promise<void> };
+	const next = (g.__piUiDialogQueue ?? Promise.resolve()).then(fn, fn);
+	g.__piUiDialogQueue = next.then(
+		() => undefined,
+		() => undefined,
+	);
+	return next;
+}
+
 export default function (pi: ExtensionAPI) {
 	pi.registerTool({
 		name: "file_ops",
 		label: "File Ops",
+		// Raises an approval dialog: must never run concurrently with another tool call.
+		executionMode: "sequential",
 		description: DESCRIPTION,
 		promptSnippet:
 			"Safe previewed filesystem mutations (mkdir/copy/move/remove/symlink/chmod/touch) with approval + guardrails",
@@ -1181,7 +1206,7 @@ export default function (pi: ExtensionAPI) {
 			const token = fingerprint(plan, cwd);
 			if (ctx.hasUI) {
 				const title = `${plan.risk.level === "high" ? "!! HIGH RISK " : ""}file_ops ${plan.action}`;
-				const approved = await ctx.ui.confirm(title, preview);
+				const approved = await uiExclusive(() => ctx.ui.confirm(title, preview));
 				if (!approved) {
 					return {
 						content: [

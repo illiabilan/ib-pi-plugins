@@ -451,10 +451,35 @@ const SubagentParams = Type.Object({
 	cwd: Type.Optional(Type.String({ description: "Working directory for the agent process (single mode)" })),
 });
 
+/**
+ * Serialize approval dialogs process-wide.
+ *
+ * pi runs the tool calls of one assistant message in parallel unless a tool sets
+ * executionMode:"sequential" (which forces the whole batch sequential). The TUI has
+ * exactly ONE dialog slot: showExtensionSelector() overwrites this.extensionSelector
+ * and clears the editor container, so a second concurrent ctx.ui.confirm() evicts the
+ * first from the widget tree and its promise NEVER resolves — that tool call never
+ * returns and the whole turn deadlocks. executionMode covers the in-batch case; this
+ * queue also covers dialogs raised concurrently from elsewhere (a subagent, an event
+ * handler, another gated extension). It lives on globalThis so all extensions in the
+ * process share one chain.
+ */
+function uiExclusive<T>(fn: () => Promise<T>): Promise<T> {
+	const g = globalThis as { __piUiDialogQueue?: Promise<void> };
+	const next = (g.__piUiDialogQueue ?? Promise.resolve()).then(fn, fn);
+	g.__piUiDialogQueue = next.then(
+		() => undefined,
+		() => undefined,
+	);
+	return next;
+}
+
 export default function (pi: ExtensionAPI) {
 	pi.registerTool({
 		name: "subagent",
 		label: "Subagent",
+		// Can raise an approval dialog (project-local agents): never run it concurrently.
+		executionMode: "sequential",
 		description: [
 			"Delegate tasks to specialized subagents with isolated context.",
 			"Modes: single (agent + task), parallel (tasks array), chain (sequential with {previous} placeholder).",
@@ -509,9 +534,11 @@ export default function (pi: ExtensionAPI) {
 				if (projectAgentsRequested.length > 0) {
 					const names = projectAgentsRequested.map((a) => a.name).join(", ");
 					const dir = discovery.projectAgentsDir ?? "(unknown)";
-					const ok = await ctx.ui.confirm(
-						"Run project-local agents?",
-						`Agents: ${names}\nSource: ${dir}\n\nProject agents are repo-controlled. Only continue for trusted repositories.`,
+					const ok = await uiExclusive(() =>
+						ctx.ui.confirm(
+							"Run project-local agents?",
+							`Agents: ${names}\nSource: ${dir}\n\nProject agents are repo-controlled. Only continue for trusted repositories.`,
+						),
 					);
 					if (!ok)
 						return {

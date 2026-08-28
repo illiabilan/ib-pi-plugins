@@ -1241,6 +1241,29 @@ async function runGradle(
 
 /* ------------------------------------------------------------ extension --- */
 
+/**
+ * Serialize approval dialogs process-wide.
+ *
+ * pi runs the tool calls of one assistant message in parallel unless a tool sets
+ * executionMode:"sequential" (which forces the whole batch sequential). The TUI has
+ * exactly ONE dialog slot: showExtensionSelector() overwrites this.extensionSelector
+ * and clears the editor container, so a second concurrent ctx.ui.confirm() evicts the
+ * first from the widget tree and its promise NEVER resolves — that tool call never
+ * returns and the whole turn deadlocks. executionMode covers the in-batch case; this
+ * queue also covers dialogs raised concurrently from elsewhere (a subagent, an event
+ * handler, another gated extension). It lives on globalThis so all extensions in the
+ * process share one chain.
+ */
+function uiExclusive<T>(fn: () => Promise<T>): Promise<T> {
+  const g = globalThis as { __piUiDialogQueue?: Promise<void> };
+  const next = (g.__piUiDialogQueue ?? Promise.resolve()).then(fn, fn);
+  g.__piUiDialogQueue = next.then(
+    () => undefined,
+    () => undefined,
+  );
+  return next;
+}
+
 export default function (pi: ExtensionAPI) {
   pi.on("session_shutdown", async () => {
     for (const c of liveChildren) killTree(c);
@@ -1250,6 +1273,8 @@ export default function (pi: ExtensionAPI) {
   pi.registerTool({
     name: "gradle_build",
     label: "Gradle",
+    // Can raise an approval dialog (destructive tasks): never run it concurrently.
+    executionMode: "sequential",
     description:
       "Run Gradle/Android compile, unit tests, or lint (ktlint/detekt/checkstyle) and return a PARSED failure " +
       "report instead of raw build logs: BUILD SUCCESSFUL/FAILED + duration, Kotlin/Java diagnostics as " +
@@ -1317,7 +1342,9 @@ export default function (pi: ExtensionAPI) {
       let note: string | undefined;
       if (risky.length) {
         if (ctx.hasUI) {
-          const ok = await ctx.ui.confirm("Run destructive Gradle task?", `${printable}\n\nin ${found.cwd}`);
+          const ok = await uiExclusive(() =>
+            ctx.ui.confirm("Run destructive Gradle task?", `${printable}\n\nin ${found.cwd}`),
+          );
           if (!ok) {
             return {
               content: [{ type: "text", text: "Cancelled by user (destructive Gradle task not run)." }],

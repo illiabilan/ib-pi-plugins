@@ -519,6 +519,29 @@ type WritePlan = {
   successNote?: string;
 };
 
+/**
+ * Serialize approval dialogs process-wide.
+ *
+ * pi runs the tool calls of one assistant message in parallel unless a tool sets
+ * executionMode:"sequential" (which forces the whole batch sequential). The TUI has
+ * exactly ONE dialog slot: showExtensionSelector() overwrites this.extensionSelector
+ * and clears the editor container, so a second concurrent ctx.ui.confirm() evicts the
+ * first from the widget tree and its promise NEVER resolves — that tool call never
+ * returns and the whole turn deadlocks. executionMode covers the in-batch case; this
+ * queue also covers dialogs raised concurrently from elsewhere (a subagent, an event
+ * handler, another gated extension). It lives on globalThis so all extensions in the
+ * process share one chain.
+ */
+function uiExclusive<T>(fn: () => Promise<T>): Promise<T> {
+  const g = globalThis as { __piUiDialogQueue?: Promise<void> };
+  const next = (g.__piUiDialogQueue ?? Promise.resolve()).then(fn, fn);
+  g.__piUiDialogQueue = next.then(
+    () => undefined,
+    () => undefined,
+  );
+  return next;
+}
+
 export default function (pi: ExtensionAPI) {
   /**
    * Safety guard: a mutating `gh` command run through the bash tool bypasses the
@@ -556,6 +579,8 @@ export default function (pi: ExtensionAPI) {
   pi.registerTool({
     name: "gh",
     label: "GitHub",
+    // Raises an approval dialog: must never run concurrently with another tool call.
+    executionMode: "sequential",
     description: `GitHub PRs/issues via the \`gh\` CLI. Title/body are plain parameters (passed over argv+stdin, never a shell string), and every mutation is preview-first.
 
 Read: auth_status, repo_info, pr_list (author/state/base/search), pr_view (number, or the current branch's PR: state, base<-head, checks, reviews, body), pr_diff (per-file stat; patch:true for the raw patch), pr_checks, search_prs, search_issues, issue_view.
@@ -1033,9 +1058,11 @@ Every result ends with "gh_status:" — ok | preview_pending_approval | refused_
         /* Interactive session: the dialog IS the approval. One decision, on the first call —
            previewing in prose and then popping a dialog made the user approve twice. */
         if (ctx.hasUI) {
-          const ok = await ctx.ui.confirm(
-            `gh ${params.action}${plan.payload.repo ? ` on ${plan.payload.repo}` : ""}`,
-            [plan.warning ?? "", "", ...plan.previewLines].join("\n").slice(0, 4000),
+          const ok = await uiExclusive(() =>
+            ctx.ui.confirm(
+              `gh ${params.action}${plan.payload.repo ? ` on ${plan.payload.repo}` : ""}`,
+              [plan.warning ?? "", "", ...plan.previewLines].join("\n").slice(0, 4000),
+            ),
           );
           if (!ok)
             return fin(
