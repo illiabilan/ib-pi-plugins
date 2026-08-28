@@ -41,6 +41,38 @@ Design principles, enforced by the test suite in `test/`:
   found during validation against the exact ASCII-diagram screenshot that
   motivated this extension).
 
+## Boxed/no-fence rendering (narrow case only)
+
+Pi's built-in `Markdown` component (`case "code"` in
+`@earendil-works/pi-tui`'s `markdown.js`) *always* prints the literal
+` ```lang ` / ` ``` ` fence lines and only supports one uniform background
+for an entire rendered text block — there's no hook to give one fenced
+block inside a normal assistant message its own background box the way the
+`edit` tool's diff view does. This was confirmed by reading `markdown.js`
+and `docs/extensions.md`, not assumed.
+
+The only building blocks extensions get for "boxed, no visible fence"
+rendering are `pi.appendEntry()` + `pi.registerEntryRenderer()` (a `Box`
+with `theme.bg("customMessageBg", ...)`). But those custom entries are
+siblings of the whole message in pi's flat transcript entry list — they can
+never be spliced *inside* one message's content — and, empirically
+verified against a live session trace, `pi.appendEntry()` called during a
+`message_end` handler is persisted **before** the assistant message itself
+(extension handlers run and complete before `sessionManager.appendMessage()`
+is called). Deferring the call to fix the ordering was also tried and
+crashes with "stale extension ctx" once the turn settles.
+
+Net effect: this technique is only order-safe when a message's entire
+content is *nothing but* one fenced code block. That specific case is
+handled — the fence is stripped from the message (which then renders as an
+empty/invisible bubble) and an equivalent boxed entry with syntax-colored
+lines and no backtick fences is appended instead, landing in exactly the
+right visual spot since there's no prose left to be displaced. Any message
+that mixes prose and code (the common "here's the code: ``` ... ``` let me
+know if..." pattern) is deliberately left on the conservative language-tag
+path below — boxing it would visually reorder the code above/below prose
+it didn't belong next to.
+
 ## Known limitations
 
 - Only backtick fences (` ``` `) are handled, not `~~~` fences.
@@ -50,6 +82,11 @@ Design principles, enforced by the test suite in `test/`:
 - Because the rewrite happens on `message_end`, a language-less block only
   gets colored once the assistant's turn finishes — it still renders plain
   while actively streaming.
+- The boxed/no-fence treatment only applies when a message's entire content
+  is a single fenced code block (see above). Messages mixing prose and code
+  keep the fence visible and just get syntax-colored — this is intentional,
+  not a bug: there is no supported way to interleave a boxed block
+  correctly inside a message that has other text around it.
 
 ## Testing
 
