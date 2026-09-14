@@ -83,6 +83,15 @@ Three independent gates make "just run it anyway" fail in the headless flow:
 - **Interactive dialog** — with `ctx.hasUI` this *replaces* the token flow entirely
   (titled `⚠ DANGEROUS` when danger flags are present); declining executes nothing.
 
+**Dialogs are serialized, and the tool never runs in a parallel batch.** The TUI has
+exactly one dialog slot, so two concurrent `ctx.ui.confirm()` calls used to orphan the
+first one — its promise never resolved, the tool call never returned, and the whole agent
+turn deadlocked (four batched `branch_delete` calls once froze a real session with 4 tool
+calls and 0 results). Two guards now prevent it: the tool declares
+`executionMode: "sequential"`, which makes pi run the entire batch one call at a time, and
+every dialog goes through a process-wide queue shared by all gated extensions. Covered by
+`concurrent-dialog.test.mjs`, which reproduces the original freeze as a negative control.
+
 Escape hatch for unattended automation: `PI_GIT_UNATTENDED=1` skips the user-turn
 requirement (token still required). `details.approval` records which path was used:
 `"ui-dialog" | "user-turn" | "unattended-env" | "ungated-switch"`.
