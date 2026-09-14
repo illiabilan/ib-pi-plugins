@@ -605,6 +605,34 @@ type Params = Static<typeof schema>;
 export type GitToolInput = Params;
 
 // ---------------------------------------------------------------------------
+// UI dialog serialization
+//
+// pi runs the tool calls of ONE assistant message in parallel unless a tool opts
+// out (agent-loop: if any tool in the batch is executionMode:"sequential", the
+// whole batch is sequential). The TUI has exactly one dialog slot —
+// showExtensionSelector() overwrites this.extensionSelector and clears the editor
+// container — so a second concurrent ctx.ui.confirm() evicts the first from the
+// widget tree and its promise NEVER resolves: that tool call never returns and
+// the whole turn deadlocks. Observed for real with 4 batched branch_delete calls
+// (4 tool calls, 0 results, frozen harness).
+//
+// executionMode below fixes the in-batch case. uiExclusive is the second half:
+// it also serializes dialogs raised concurrently from elsewhere in the process
+// (another gated extension, a subagent, an event handler). The queue lives on
+// globalThis so every extension shares one chain.
+// ---------------------------------------------------------------------------
+
+function uiExclusive<T>(fn: () => Promise<T>): Promise<T> {
+  const g = globalThis as { __piUiDialogQueue?: Promise<void> };
+  const next = (g.__piUiDialogQueue ?? Promise.resolve()).then(fn, fn);
+  g.__piUiDialogQueue = next.then(
+    () => undefined,
+    () => undefined,
+  );
+  return next;
+}
+
+// ---------------------------------------------------------------------------
 // extension
 // ---------------------------------------------------------------------------
 
@@ -612,6 +640,8 @@ export default function (pi: ExtensionAPI) {
   pi.registerTool({
     name: "git",
     label: "Git",
+    // Raises an approval dialog: must never run concurrently with another tool call.
+    executionMode: "sequential",
     description: `All git operations in one tool; no shell, so paths and multi-line commit messages need no quoting.
 
 Reads (immediate): status (branch + upstream ahead/behind + grouped staged/unstaged/conflicted/untracked), diff (per-file +/- summary plus a patch truncated to ${DEF_MAX_LINES_PER_FILE} lines/file, ${DEF_MAX_TOTAL_LINES} total), log, show, branch, blame, merge_base, rev_parse, stash_list.
@@ -1073,9 +1103,11 @@ Ex: {"action":"status"} | {"action":"diff","base":"origin/main","flags":["stat-o
             if (!ungated && ctx.hasUI) {
               // Interactive session: ONE approval, the dialog. No preview round-trip, no token —
               // asking in prose and then popping a dialog made the user approve the same thing twice.
-              const ok = await ctx.ui.confirm(
-                `git ${p.action}${built.dangers.length ? "  \u26a0 DANGEROUS" : ""}`,
-                `${preview}${dangerBlock ? `\n${dangerBlock.trim()}` : ""}`,
+              const ok = await uiExclusive(() =>
+                ctx.ui.confirm(
+                  `git ${p.action}${built.dangers.length ? "  \u26a0 DANGEROUS" : ""}`,
+                  `${preview}${dangerBlock ? `\n${dangerBlock.trim()}` : ""}`,
+                ),
               );
               if (!ok)
                 return fin(

@@ -267,10 +267,35 @@ function unwrapFields(input: unknown): Record<string, unknown> | null {
   return obj;
 }
 
+/**
+ * Serialize approval dialogs process-wide.
+ *
+ * pi runs the tool calls of one assistant message in parallel unless a tool sets
+ * executionMode:"sequential" (which forces the whole batch sequential). The TUI has
+ * exactly ONE dialog slot: showExtensionSelector() overwrites this.extensionSelector
+ * and clears the editor container, so a second concurrent ctx.ui.confirm() evicts the
+ * first from the widget tree and its promise NEVER resolves — that tool call never
+ * returns and the whole turn deadlocks. executionMode covers the in-batch case; this
+ * queue also covers dialogs raised concurrently from elsewhere (a subagent, an event
+ * handler, another gated extension). It lives on globalThis so all extensions in the
+ * process share one chain.
+ */
+function uiExclusive<T>(fn: () => Promise<T>): Promise<T> {
+  const g = globalThis as { __piUiDialogQueue?: Promise<void> };
+  const next = (g.__piUiDialogQueue ?? Promise.resolve()).then(fn, fn);
+  g.__piUiDialogQueue = next.then(
+    () => undefined,
+    () => undefined,
+  );
+  return next;
+}
+
 export default function (pi: ExtensionAPI) {
   pi.registerTool({
     name: "jira",
     label: "Jira",
+    // Raises an approval dialog: must never run concurrently with another tool call.
+    executionMode: "sequential",
     description: `Query and modify Jira issues over the REST API (credentials from JIRA_USERNAME / JIRA_API_TOKEN / JIRA_URL env vars).
 
 Read actions: show (one issue with description), list (issues assigned to you), search (JQL), projects, me, stats, sprint_stats, link_types, createmeta, test_token.
@@ -303,7 +328,7 @@ Every result ends with a "config_source:" marker: "env" means credentials came f
           params.action === "link"
             ? `${params.issue_key} ${params.link_type} ${params.target_key}`
             : `${params.issue_key ?? "new issue"}: ${JSON.stringify(unwrapFields(params.fields) ?? {}).slice(0, 800)}`;
-        const approved = await ctx.ui.confirm(`Jira ${params.action}`, summary);
+        const approved = await uiExclusive(() => ctx.ui.confirm(`Jira ${params.action}`, summary));
         if (!approved)
           return {
             content: [

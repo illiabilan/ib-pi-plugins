@@ -594,10 +594,35 @@ function capRaw(text: string): string {
 
 /* ------------------------------------------------------------------- tool */
 
+/**
+ * Serialize approval dialogs process-wide.
+ *
+ * pi runs the tool calls of one assistant message in parallel unless a tool sets
+ * executionMode:"sequential" (which forces the whole batch sequential). The TUI has
+ * exactly ONE dialog slot: showExtensionSelector() overwrites this.extensionSelector
+ * and clears the editor container, so a second concurrent ctx.ui.confirm() evicts the
+ * first from the widget tree and its promise NEVER resolves — that tool call never
+ * returns and the whole turn deadlocks. executionMode covers the in-batch case; this
+ * queue also covers dialogs raised concurrently from elsewhere (a subagent, an event
+ * handler, another gated extension). It lives on globalThis so all extensions in the
+ * process share one chain.
+ */
+function uiExclusive<T>(fn: () => Promise<T>): Promise<T> {
+  const g = globalThis as { __piUiDialogQueue?: Promise<void> };
+  const next = (g.__piUiDialogQueue ?? Promise.resolve()).then(fn, fn);
+  g.__piUiDialogQueue = next.then(
+    () => undefined,
+    () => undefined,
+  );
+  return next;
+}
+
 export default function (pi: ExtensionAPI) {
   pi.registerTool({
     name: "node_project",
     label: "Node Project",
+    // Can raise an approval dialog (install): never run it concurrently with another call.
+    executionMode: "sequential",
     description: `Run npm/tsc workflows (install, typecheck, test, build, outdated, info) and get back only the actionable part of the output instead of the npm/tsc firehose.
 
 Replaces these bash idioms:
@@ -729,9 +754,11 @@ Each result also reports the exact command it ran ("cmd:") so it can be reproduc
       if (action === "install") {
         const pkgs = params.packages ?? [];
         if (ctx.hasUI && pkgs.length && !params.noSave) {
-          const approved = await ctx.ui.confirm(
-            "npm install",
-            `${runDir}\n\nnpm install ${pkgs.join(" ")}${params.dev ? " --save-dev" : ""}\n\nThis modifies package.json and node_modules.`,
+          const approved = await uiExclusive(() =>
+            ctx.ui.confirm(
+              "npm install",
+              `${runDir}\n\nnpm install ${pkgs.join(" ")}${params.dev ? " --save-dev" : ""}\n\nThis modifies package.json and node_modules.`,
+            ),
           );
           if (!approved)
             return fin(`User declined the install of ${pkgs.join(", ")}. Nothing was installed.`, { declined: true }, true);
