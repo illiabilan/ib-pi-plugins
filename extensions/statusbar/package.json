@@ -1,7 +1,7 @@
 {
   "name": "pi-statusbar",
   "version": "1.0.0",
-  "description": "Segmented status bar / infobar for Pi: replaces the built-in footer with π 〉 model 〉 thinking 〉 project 〉 git 〉 context 〉 cost, width-aware and non-blocking. Registers no tool: zero prompt footprint.",
+  "description": "Segmented status bar / infobar for Pi: replaces the built-in footer with π › model › thinking › project › git › context › cost, width-aware and non-blocking. Registers no tool: zero prompt footprint.",
   "type": "module",
   "main": "index.ts",
   "keywords": [

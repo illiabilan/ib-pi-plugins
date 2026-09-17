@@ -6,7 +6,7 @@ carrying extension statuses.
 
 ```
 git guard active (120s timeout)
-π 〉 ⊙ claude-sonnet-4-5-20250929 〉 think:high 〉 ⌂ pi-plugins 〉 ⑂ main *2 +1 ?3 〉 ◔ 12.4%/200k 〉 $0.42
+π › ⊙ claude-sonnet-4-5-20250929 › think:high › ⌂ pi-plugins › ⑂ main *2 +1 ?3 › ◔ 12.4%/200k › $0.42
 ```
 
 Registers **no tool** — zero prompt/context footprint. It only draws.
@@ -64,11 +64,11 @@ Widths measured with `visibleWidth`/`truncateToWidth`/`sliceByColumn` from
 count correctly. Real measured examples (100-col terminal shrinking):
 
 ```
-100  π 〉 ⊙ claude-opus-5 anthropic 〉 think:high 〉 ⌂ pi-plugins 〉 ⑂ main *3 ?2 〉 ◔ 0.0%/1.0M
- 80  π 〉 ⊙ opus-5 〉 think:high 〉 ⌂ pi-plugins 〉 ⑂ main *3 〉 ◔ 0.0%/1.0M
- 60  π 〉 ⊙ opus-5 〉 think:high 〉 ⑂ main *3 〉 ◔ 0.0%/1.0M
- 40  π 〉 ⊙ opus-5 〉 ⑂ main 〉 ◔ 0.0%/1.0M
- 20  π 〉 ⑂ main *3 ?2
+100  π › ⊙ claude-opus-5 anthropic › think:high › ⌂ pi-plugins › ⑂ main *3 ?2 › ◔ 0.0%/1.0M
+ 80  π › ⊙ opus-5 › think:high › ⌂ pi-plugins › ⑂ main *3 › ◔ 0.0%/1.0M
+ 60  π › ⊙ opus-5 › think:high › ⑂ main *3 › ◔ 0.0%/1.0M
+ 40  π › ⊙ opus-5 › ⑂ main › ◔ 0.0%/1.0M
+ 20  π › ⑂ main *3 ?2
  10  π
 ```
 

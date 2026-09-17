@@ -2,7 +2,7 @@
  * statusbar — a segmented status bar / infobar that replaces pi's built-in footer.
  *
  *   git guard active (120s timeout)                       <- dim status line (only when set)
- *   π 〉 ⊙ sonnet-4-5 〉 think:high 〉 ⌂ pi-plugins 〉 ⑂ main *2 +1 〉 ◔ 12.4%/200k 〉 $0.42
+ *   π › ⊙ sonnet-4-5 › think:high › ⌂ pi-plugins › ⑂ main *2 +1 › ◔ 12.4%/200k › $0.42
  *
  * Design invariants (see README):
  *   1. render() is pure: it only reads a cached snapshot + the live theme. No child
@@ -102,7 +102,7 @@ const GLYPH = {
 	git: "⑂",
 	ctx: "◔",
 	guard: "⚑",
-	sep: "〉",
+	sep: "›",
 } as const;
 
 /** Hard cap on how many extension statuses we ever touch per render (10k-status safety). */
