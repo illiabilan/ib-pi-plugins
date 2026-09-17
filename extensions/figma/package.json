@@ -1,0 +1,14 @@
+{
+  "name": "figma",
+  "version": "1.0.0",
+  "description": "Figma design context for Pi, bridged through a headless Claude Code subprocess that holds the Figma MCP OAuth session",
+  "main": "index.ts",
+  "license": "MIT",
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "^0.85.1",
+    "@earendil-works/pi-tui": "^0.85.1",
+    "@types/node": "^26.1.2",
+    "typebox": "^1.3.10",
+    "typescript": "^7.0.2"
+  }
+}
