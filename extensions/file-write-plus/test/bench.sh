@@ -6,7 +6,7 @@
 # Usage: bench.sh <case-name> <fixture-dir> "<prompt>" [extra pi args...]
 set -o pipefail
 
-EXT="/Users/dev/StudioProjects/pi-plugins/extensions/file-write-plus/index.ts"
+EXT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/index.ts"
 CASE="$1"; FIXTURE="$2"; PROMPT="$3"; shift 3
 OUT="/tmp/fwp-bench/$CASE"
 rm -rf "$OUT"; mkdir -p "$OUT"

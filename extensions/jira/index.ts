@@ -4,7 +4,7 @@
  * Configuration comes ONLY from environment variables (never hardcoded):
  *   JIRA_USERNAME   your Atlassian account email        (required)
  *   JIRA_API_TOKEN  Atlassian API token                 (required)
- *   JIRA_URL        instance base URL                   (optional, default https://acme.atlassian.net)
+ *   JIRA_URL        instance base URL                   (required, e.g. https://yourcompany.atlassian.net)
  *
  * Put them in your shell profile (~/.zshrc, ~/.bashrc, ~/.zprofile):
  *   export JIRA_USERNAME="you@example.com"
@@ -19,7 +19,11 @@ import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-const DEFAULT_URL = "https://acme.atlassian.net";
+/**
+ * There is deliberately NO default instance URL. A hardcoded company host both leaks
+ * which organisation this was written for and silently points a misconfigured setup at
+ * someone else's Jira, sending the user's Basic-auth header there. JIRA_URL is required.
+ */
 const PROFILES = [".zshrc", ".zprofile", ".zshenv", ".bash_profile", ".bashrc", ".profile"];
 
 type Creds = {
@@ -36,9 +40,10 @@ let credsPromise: Promise<Creds | { error: string; source: "none" }> | null = nu
 function fromEnv(): Creds | null {
   const username = process.env.JIRA_USERNAME?.trim();
   const token = process.env.JIRA_API_TOKEN?.trim();
-  if (!username || !token) return null;
+  const url = process.env.JIRA_URL?.trim();
+  if (!username || !token || !url) return null;
   return {
-    url: (process.env.JIRA_URL?.trim() || DEFAULT_URL).replace(/\/+$/, ""),
+    url: url.replace(/\/+$/, ""),
     username,
     token,
     source: "env",
@@ -58,8 +63,8 @@ function fromLoginShell(): Promise<Creds | null> {
       (err, stdout) => {
         if (err && !stdout) return resolve(null);
         const [username = "", token = "", url = ""] = stdout.split("\n").map((s) => s.trim());
-        if (!username || !token) return resolve(null);
-        resolve({ url: (url || DEFAULT_URL).replace(/\/+$/, ""), username, token, source: "shell-profile" });
+        if (!username || !token || !url) return resolve(null);
+        resolve({ url: url.replace(/\/+$/, ""), username, token, source: "shell-profile" });
       },
     );
   });
@@ -71,7 +76,7 @@ Add these to your shell profile (~/.zshrc, ~/.bashrc or ~/.zprofile), then resta
 
   export JIRA_USERNAME="your-email@example.com"
   export JIRA_API_TOKEN="your-atlassian-api-token"
-  export JIRA_URL="https://yourcompany.atlassian.net"   # optional, default ${DEFAULT_URL}
+  export JIRA_URL="https://yourcompany.atlassian.net"   # required: your Jira instance
 
 Create an API token at https://id.atlassian.com/manage-profile/security/api-tokens
 (Atlassian API tokens commonly expire after 90 days — regenerate and re-export if you get 401.)`;
@@ -529,20 +534,20 @@ const schema = Type.Object({
         "Bulk targets for transition/comment/delete/link (each key is processed in turn, errors reported per key, one approval covers the batch). For link, every key is a source pointing at target_key \u2014 e.g. mark 5 duplicates as duplicating the canonical issue.",
     }),
   ),
-  jql: Type.Optional(Type.String({ description: "JQL for action=search, e.g. 'project = ADA AND status = \"In Progress\"'" })),
+  jql: Type.Optional(Type.String({ description: "JQL for action=search, e.g. 'project = PROJ AND status = \"In Progress\"'" })),
   limit: Type.Optional(Type.Number({ description: "Max results for list/search (default 10)" })),
   days: Type.Optional(Type.Number({ description: "Lookback window for action=stats (default 30)" })),
   project: Type.Optional(
     Type.String({
       description:
-        "Project key for action=createmeta (e.g. ADA). For action=projects, an optional case-insensitive key/name filter.",
+        "Project key for action=createmeta (e.g. PROJ). For action=projects, an optional case-insensitive key/name filter.",
     }),
   ),
   issue_type: Type.Optional(Type.String({ description: "Issue type name for createmeta, e.g. Story. Omit to list available types." })),
   fields: Type.Optional(
     Type.Unknown({
       description:
-        'Field object for create/update. create: {"project":{"key":"ADA"},"issuetype":{"name":"Story"},"summary":"..."}. update: {"summary":"New title"}. A {"fields":{...}} wrapper is accepted too.',
+        'Field object for create/update. create: {"project":{"key":"PROJ"},"issuetype":{"name":"Story"},"summary":"..."}. update: {"summary":"New title"}. A {"fields":{...}} wrapper is accepted too.',
     }),
   ),
   link_type: Type.Optional(
@@ -622,7 +627,7 @@ Read actions: show (one issue with description), list (issues assigned to you), 
 Write actions: create, update, transition (change status), comment, link, delete. These mutate real shared Jira state — only call them after the user has seen the exact payload and explicitly approved it. In interactive sessions jira also asks the user to confirm each write. delete is IRREVERSIBLE and additionally requires confirm_delete:true.
 
 Backlog cleanup / de-duplication flow:
-  1. {"action":"find_duplicates","project":"ADA"} (or jql/board_id) — returns clusters with scores, a suggested canonical issue, and which pairs are already linked as duplicates.
+  1. {"action":"find_duplicates","project":"PROJ"} (or jql/board_id) — returns clusters with scores, a suggested canonical issue, and which pairs are already linked as duplicates.
   2. Show the clusters to the user and let THEM decide what is a real duplicate.
   3. For each confirmed duplicate: {"action":"link","issue_keys":["PROJ-2","PROJ-3"],"link_type":"duplicates","target_key":"PROJ-1"} then {"action":"transition","issue_keys":["PROJ-2","PROJ-3"],"transition":"Done","resolution":"Duplicate","body":"Closing as duplicate of PROJ-1"}.
   4. Prefer closing over deleting; only use delete when the user explicitly asks to destroy the issue.
@@ -630,13 +635,13 @@ Backlog cleanup / de-duplication flow:
 Prefer jira over running curl/jira_cli.sh in bash for anything Jira — it needs no shell profile sourcing and returns compact pre-formatted text.
 Examples:
   {"action":"show","issue_key":"PROJ-123"}
-  {"action":"search","jql":"project = ADA AND status = \\"In Progress\\"","limit":20}
-  {"action":"createmeta","project":"ADA","issue_type":"Story"}
-  {"action":"create","fields":{"project":{"key":"ADA"},"issuetype":{"name":"Story"},"summary":"My ticket"}}
+  {"action":"search","jql":"project = PROJ AND status = \\"In Progress\\"","limit":20}
+  {"action":"createmeta","project":"PROJ","issue_type":"Story"}
+  {"action":"create","fields":{"project":{"key":"PROJ"},"issuetype":{"name":"Story"},"summary":"My ticket"}}
   {"action":"update","issue_key":"PROJ-123","fields":{"summary":"New title"}}
   {"action":"link","issue_key":"PROJ-123","link_type":"blocks","target_key":"PROJ-124"}
-  {"action":"backlog","project":"ADA","limit":200}
-  {"action":"find_duplicates","jql":"project = ADA AND statusCategory != Done","threshold":0.6}
+  {"action":"backlog","project":"PROJ","limit":200}
+  {"action":"find_duplicates","jql":"project = PROJ AND statusCategory != Done","threshold":0.6}
   {"action":"transitions","issue_key":"PROJ-123"}
   {"action":"transition","issue_key":"PROJ-123","transition":"Done","resolution":"Duplicate","body":"Duplicate of PROJ-100"}
   {"action":"comment","issue_key":"PROJ-123","body":"Superseded by PROJ-100"}
@@ -1079,7 +1084,7 @@ Every result ends with a "config_source:" marker: "env" means credentials came f
             );
           }
           case "createmeta": {
-            if (!params.project) return bad("project is required for action=createmeta (e.g. ADA).");
+            if (!params.project) return bad("project is required for action=createmeta (e.g. PROJ).");
             const pk = encodeURIComponent(params.project);
             const tr = await api(creds, 3, `issue/createmeta/${pk}/issuetypes`, "GET", undefined, signal);
             if (!tr.ok) return fin(errText(tr), true);
@@ -1111,7 +1116,7 @@ Every result ends with a "config_source:" marker: "env" means credentials came f
           }
           case "create": {
             const fields = unwrapFields(params.fields);
-            if (!fields) return bad('fields is required for action=create, e.g. {"project":{"key":"ADA"},"issuetype":{"name":"Story"},"summary":"..."}');
+            if (!fields) return bad('fields is required for action=create, e.g. {"project":{"key":"PROJ"},"issuetype":{"name":"Story"},"summary":"..."}');
             const r = await api(creds, 2, "issue", "POST", { fields }, signal);
             if (!r.ok || !r.json?.key) return fin(`Failed to create issue.\n${errText(r)}`, true);
             return fin(`Created ${r.json.key}\nURL: ${creds.url}/browse/${r.json.key}`);

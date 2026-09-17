@@ -948,7 +948,7 @@ const Params = Type.Object({
   variant: Type.Optional(
     Type.String({
       description:
-        "Android build variant in Gradle task casing, e.g. 'AcmeRelease' or 'Debug'. " +
+        "Android build variant in Gradle task casing, e.g. 'ProdRelease' or 'Debug'. " +
         "compile -> :mod:compile<Variant>Sources, test -> :mod:test<Variant>UnitTest. " +
         "Omit for plain JVM modules (compile -> :mod:classes, test -> :mod:test).",
     }),
@@ -965,7 +965,7 @@ const Params = Type.Object({
     Type.Array(Type.String(), {
       description:
         "Extra Gradle args appended verbatim (e.g. ['-PsomeFlag=1','--rerun-tasks']). " +
-        "For action:'raw' this is where the task names go, e.g. ['help'] or [':app:assembleAcmeDebug'].",
+        "For action:'raw' this is where the task names go, e.g. ['help'] or [':app:assembleProdDebug'].",
     }),
   ),
   outputMode: Type.Optional(
@@ -1282,9 +1282,9 @@ export default function (pi: ExtensionAPI) {
       "stack frames, and lint violations grouped by rule. Replaces the " +
       "`./gradlew :mod:task 2>&1 | grep -E \"...\" | head -N` bash pipeline, which returns 10-100 KB of " +
       "`> Task ... UP-TO-DATE` noise and needs a hand-written parser every time.\n" +
-      "Example: action:'test', modules:[':features:subscriptions'], variant:'AcmeRelease', " +
+      "Example: action:'test', modules:[':features:subscriptions'], variant:'ProdRelease', " +
       "tests:['*SubscriptionCheckoutAnalyticsTest*'], offline:true -> " +
-      "`./gradlew :features:subscriptions:testAcmeReleaseUnitTest --tests '*SubscriptionCheckoutAnalyticsTest*' --offline`, " +
+      "`./gradlew :features:subscriptions:testProdReleaseUnitTest --tests '*SubscriptionCheckoutAnalyticsTest*' --offline`, " +
       "reported as one status line plus only the failed tests.",
     promptSnippet:
       "Run Gradle compile/test/lint and get parsed errors, failed tests and lint violations instead of raw build output",
@@ -1292,14 +1292,14 @@ export default function (pi: ExtensionAPI) {
       "Use gradle_build instead of running ./gradlew through bash: it already parses BUILD SUCCESSFUL/FAILED, " +
         "compile diagnostics, failed tests and lint violations, so never pipe Gradle through grep/head/tail yourself.",
       "With gradle_build always scope the work: pass modules (e.g. [':features:subscriptions']), variant " +
-        "(e.g. 'AcmeRelease') and, for tests, tests:['*SomeTest*'] — an unscoped root-project build is very slow.",
+        "(e.g. 'ProdRelease') and, for tests, tests:['*SomeTest*'] — an unscoped root-project build is very slow.",
       "gradle_build defaults to outputMode:'failures' (only failures + a one-line summary). Escalate to " +
         "outputMode:'raw' only when the report says the parser recognised nothing, or when you need Gradle's own " +
         "output; use outputMode:'summary' when you just want pass/fail and counts.",
       "gradle_build hides compiler warnings by default and prints a suppressed count; pass includeWarnings:true " +
         "when you are chasing warnings (it lists them automatically when the build failed via -Werror).",
       "Use gradle_build action:'raw' with extraArgs for anything that is not compile/test/lint (e.g. " +
-        "extraArgs:[':app:assembleAcmeDebug'] or ['dependencies','--configuration','releaseRuntimeClasspath']).",
+        "extraArgs:[':app:assembleProdDebug'] or ['dependencies','--configuration','releaseRuntimeClasspath']).",
       "Trust gradle_build lint violations printed with no provenance tag (they came from this run's console " +
         "output). A block tagged '[read from a report file that PREDATES this run ...]' may describe older code " +
         "because the lint task was UP-TO-DATE — re-run it with extraArgs:['--rerun-tasks'] before acting on those.",
@@ -1329,7 +1329,7 @@ export default function (pi: ExtensionAPI) {
 
       if (p.action === "raw" && !(p.extraArgs?.length ?? 0)) {
         const msg =
-          "Error: action:'raw' needs the Gradle tasks/flags in extraArgs, e.g. extraArgs:[':app:assembleAcmeDebug'].";
+          "Error: action:'raw' needs the Gradle tasks/flags in extraArgs, e.g. extraArgs:[':app:assembleProdDebug'].";
         return { content: [{ type: "text", text: msg }], details: { error: msg } };
       }
 

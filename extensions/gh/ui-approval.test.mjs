@@ -12,7 +12,7 @@ const ck = (n, c, x = "") => { if (c) { pass++; console.log("  ok  ", n); } else
 
 const prompts = [];
 const ctx = {
-  cwd: "/Users/dev/StudioProjects/pi-plugins", hasUI: true, mode: "tui",
+  cwd: process.cwd(), hasUI: true, mode: "tui",
   sessionManager: { getEntries: () => [{ type: "message", message: { role: "user" } }] },
   ui: { confirm: async (title, body) => { prompts.push({ title, body }); return false; } },
 };

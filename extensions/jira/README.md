@@ -13,7 +13,7 @@ restart pi:
 ```bash
 export JIRA_USERNAME="your-email@example.com"     # required — Atlassian account email
 export JIRA_API_TOKEN="your-atlassian-api-token"  # required — https://id.atlassian.com/manage-profile/security/api-tokens
-export JIRA_URL="https://yourcompany.atlassian.net"  # optional — default https://acme.atlassian.net
+export JIRA_URL="https://yourcompany.atlassian.net"  # required — your Jira instance
 ```
 
 Tokens typically expire after ~90 days; regenerate and re-export on HTTP 401.
@@ -36,19 +36,19 @@ sessions each write asks the user to confirm before anything is sent.
 ```json
 {"action":"show","issue_key":"PROJ-123"}
 {"action":"projects","project":"subs"}   // optional key/name filter; unfiltered list is capped at 40
-{"action":"search","jql":"project = ADA AND status = \"In Progress\"","limit":20}
-{"action":"createmeta","project":"ADA","issue_type":"Story"}
-{"action":"create","fields":{"project":{"key":"ADA"},"issuetype":{"name":"Story"},"summary":"…","customfield_10014":"PROJ-9433"}}
+{"action":"search","jql":"project = PROJ AND status = \"In Progress\"","limit":20}
+{"action":"createmeta","project":"PROJ","issue_type":"Story"}
+{"action":"create","fields":{"project":{"key":"PROJ"},"issuetype":{"name":"Story"},"summary":"…","customfield_10014":"PROJ-900"}}
 {"action":"update","issue_key":"PROJ-123","fields":{"summary":"New title"}}
-{"action":"link","issue_key":"PROJ-123","link_type":"child-of","target_key":"PROJ-9433"}
+{"action":"link","issue_key":"PROJ-123","link_type":"child-of","target_key":"PROJ-900"}
 ```
 
 ## Backlog review & de-duplication
 
 ```json
-{"action":"boards","project":"ADA"}
-{"action":"backlog","project":"ADA","limit":300}          // ranked board backlog (Agile API)
-{"action":"find_duplicates","project":"ADA","threshold":0.6}
+{"action":"boards","project":"PROJ"}
+{"action":"backlog","project":"PROJ","limit":300}          // ranked board backlog (Agile API)
+{"action":"find_duplicates","project":"PROJ","threshold":0.6}
 {"action":"transitions","issue_key":"PROJ-123"}
 {"action":"link","issue_keys":["PROJ-2","PROJ-3"],"link_type":"duplicates","target_key":"PROJ-1"}
 {"action":"transition","issue_keys":["PROJ-2","PROJ-3"],"transition":"Done","resolution":"Duplicate","body":"Closing as duplicate of PROJ-1"}

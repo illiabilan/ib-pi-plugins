@@ -143,7 +143,7 @@ const schema = Type.Object({
     }),
   ),
   filter: Type.Optional(
-    Type.String({ description: "action=list: substring filter on the file path (e.g. 'mobile-android')." }),
+    Type.String({ description: "action=list: substring filter on the file path (e.g. 'my-app')." }),
   ),
   sessionsDir: Type.Optional(
     Type.String({ description: `Sessions directory (default ~/${CONFIG_DIR_NAME}/agent/sessions).` }),

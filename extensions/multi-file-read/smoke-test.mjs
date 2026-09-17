@@ -1,6 +1,9 @@
 import { createJiti } from "jiti";
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
 const jiti = createJiti(import.meta.url, { interopDefault: true });
-const factory = await jiti.import("/Users/dev/StudioProjects/pi-plugins/extensions/multi-file-read/index.ts", { default: true });
+const here = dirname(fileURLToPath(import.meta.url));
+const factory = await jiti.import(join(here, "index.ts"), { default: true });
 let tool;
 factory({ registerTool: (t) => { tool = t; }, on(){}, registerCommand(){} });
 // Usage: node smoke-test.mjs '{"files":[{"path":"a.txt"}]}' [cwd]

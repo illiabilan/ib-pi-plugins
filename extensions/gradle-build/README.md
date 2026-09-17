@@ -7,11 +7,11 @@ the output through `grep`/`head`/`tail`** — Gradle was the single biggest sour
 results, and the agent re-invented an ad-hoc parser every single time.
 
 ```
-before:  ./gradlew :features:subscriptions:compileAcmeReleaseSources --offline 2>&1 \
+before:  ./gradlew :features:subscriptions:compileProdReleaseSources --offline 2>&1 \
            | grep -E "^e:|error:|BUILD|warning: .*(unused|never used)" | head -25
 
 after:   gradle_build({ action: "compile", modules: [":features:subscriptions"],
-                        variant: "AcmeRelease", offline: true })
+                        variant: "ProdRelease", offline: true })
 ```
 
 Measured on a real 100-module Gradle build whose raw output is 57 KB / 1155 lines: the tool returns
@@ -38,7 +38,7 @@ pi -e /path/to/extensions/gradle-build/index.ts --mode json \
 | `action` | `'compile' \| 'test' \| 'lint' \| 'raw'` | required | What to run (task names are derived, see below) |
 | `modules` | `string[]` | `[]` (root project) | `[':features:subscriptions']`; also accepts `features/subscriptions` |
 | `tests` | `string[]` | – | `--tests` filters, e.g. `['*SubscriptionCheckoutAnalyticsTest*']` (only `action:'test'`; repeated per test task so multi-module runs filter correctly) |
-| `variant` | `string` | – | Android variant in task casing, e.g. `'AcmeRelease'`, `'Debug'` |
+| `variant` | `string` | – | Android variant in task casing, e.g. `'ProdRelease'`, `'Debug'` |
 | `offline` | `boolean` | `false` | `--offline` |
 | `lintTasks` | `string[]` | auto-detected | Override lint task names for `action:'lint'` |
 | `extraArgs` | `string[]` | – | Appended verbatim; for `action:'raw'` this is where the tasks go |
@@ -105,11 +105,11 @@ The stale case is also called out in the text output, so the agent's trust can b
 
 | bash | tool call |
 |---|---|
-| `./gradlew :m:compileAcmeReleaseSources --offline 2>&1 \| grep -E "^e:\|error:\|BUILD" \| head -25` | `{action:'compile', modules:[':m'], variant:'AcmeRelease', offline:true}` |
-| `./gradlew :m:testAcmeReleaseUnitTest --tests '*FooTest*' 2>&1 \| grep -E "FAILED\|error:\|BUILD" \| head` | `{action:'test', modules:[':m'], variant:'AcmeRelease', tests:['*FooTest*']}` |
+| `./gradlew :m:compileProdReleaseSources --offline 2>&1 \| grep -E "^e:\|error:\|BUILD" \| head -25` | `{action:'compile', modules:[':m'], variant:'ProdRelease', offline:true}` |
+| `./gradlew :m:testProdReleaseUnitTest --tests '*FooTest*' 2>&1 \| grep -E "FAILED\|error:\|BUILD" \| head` | `{action:'test', modules:[':m'], variant:'ProdRelease', tests:['*FooTest*']}` |
 | `./gradlew :m:ktlintStep :m:checkstyleStep :m:detektStep 2>&1 \| grep -E "FAILED\|BUILD\|\.kt:[0-9]+\|error\|warning"` | `{action:'lint', modules:[':m']}` |
-| `./gradlew :m:compileAcmeDebugUnitTestKotlin -q 2>&1 \| tail -40` | `{action:'compile', modules:[':m'], variant:'AcmeDebugUnitTest'}` or `outputMode:'raw', rawLines:40` |
-| `./gradlew :app:assembleAcmeDebug 2>&1 \| grep ...` | `{action:'raw', extraArgs:[':app:assembleAcmeDebug']}` |
+| `./gradlew :m:compileProdDebugUnitTestKotlin -q 2>&1 \| tail -40` | `{action:'compile', modules:[':m'], variant:'ProdDebugUnitTest'}` or `outputMode:'raw', rawLines:40` |
+| `./gradlew :app:assembleProdDebug 2>&1 \| grep ...` | `{action:'raw', extraArgs:[':app:assembleProdDebug']}` |
 | `./gradlew ... 2>&1 \| grep -c FAILED` | `outputMode:'summary'` (counts) or `details.errorCount` / `details.testFailures` |
 
 ## Safety

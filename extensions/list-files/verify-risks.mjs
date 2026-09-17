@@ -357,7 +357,9 @@ utimesSync(join(dir, "times", "mid.txt"), mid, mid);
 }
 
 // ------------------------- differential vs real `find` -------------------------
-const REPO = join(process.env.HOME, "StudioProjects/mobile/mobile-android");
+// A large real-world repo to diff against `find`. Point LIST_FILES_VERIFY_REPO at any
+// big checkout; the differential section is skipped when it does not exist.
+const REPO = process.env.LIST_FILES_VERIFY_REPO || join(process.env.HOME, "StudioProjects/android-repo");
 try {
   const cases = [
     {

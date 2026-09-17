@@ -50,7 +50,7 @@ const plain = (s) => s.replace(/\u001b\[[0-9;]*m/g, "");
 
 // 2. Long branch on a wide terminal
 {
-  const branch = "ib/proj-48913-upsell-remaining-issubscriber"; // 41 cols
+  const branch = "ib/abc-48913-upsell-remaining-issubscriber"; // 41 cols
   const ff = await mount();
   const f = ff({ requestRender(){} }, mockTheme, {
     getGitBranch: () => branch, onBranchChange: () => () => {},
