@@ -1,18 +1,43 @@
 # bash-guardrail
 
-A Pi extension that **steers the agent away from `bash`** when a purpose-built tool
-is an exact substitute — by intercepting the `bash` tool call itself, not by adding
-another tool.
+A Pi extension that **takes `bash` away from the agent** — by intercepting the
+`bash` tool call itself, not by adding another tool.
 
 It registers **no tool and no prompt text**: its context footprint is zero tokens
 until it actually intervenes.
 
+### Modes
+
+| Mode | Behaviour |
+|---|---|
+| **`on`** (default) | **Lockdown. Every `bash` call is blocked.** The refusal names the tool equivalent when there is one. |
+| `assist` | Selective: block a single-intent command with an exact tool equivalent, nudge composites, allow the rest. |
+| `nudge` | Never block; only append a one-line hint. |
+| `off` | Fully inert. |
+
 ```
+# mode=on (lockdown)
+tool_call(bash) ──▶ blocked, always
+                     └─ except: the user typed this exact command themselves
+
+# mode=assist
 tool_call(bash) ──▶ classify(command)
                      ├─ block  → refusal containing the exact replacement call
                      ├─ nudge  → command runs; one short line appended to the result
                      └─ allow  → nothing happens (default for anything unclear)
 ```
+
+**The agent cannot unlock lockdown.** There is no marker it can append, no
+rephrasing, and no retry that gets through — a repeat of a blocked command is
+blocked again. Only the human lifts it: `/guardrail assist|nudge|off`,
+`PI_BASH_GUARDRAIL=…`, or by typing the command themselves.
+
+> Why lockdown exists: with the selective mode, the agent learned to append
+> `# guardrail:allow` *pre-emptively* — silencing the check before it ran and
+> quietly deleting that whole class of commands from the statistics. An escape
+> hatch the agent can reach for on its own is not a guardrail. It is now (a)
+> inert in lockdown and (b) in `assist`, honoured **only** as a re-send of a
+> command that was actually blocked.
 
 ## Why
 
@@ -24,7 +49,33 @@ tool equivalent. Tool descriptions alone did not stop the habit; a refusal that
 arrives *at the moment of the call* and already contains the replacement
 arguments does.
 
-## The three outcomes
+## The outcomes
+
+### LOCKDOWN (mode=on) — nothing executed, ever
+
+```
+$ cd /repo && cat features/…/UserSubscriptionModule.kt   # guardrail:allow
+
+[bash-guardrail] bash is locked down (mode=on). Nothing was executed.
+
+  cd /repo && cat features/…/UserSubscriptionModule.kt # guardrail:allow
+
+Use the tool instead — read:
+  read {"path":"/repo/features/…/UserSubscriptionModule.kt"}
+
+`# guardrail:allow` has no effect in this mode — it is not an agent-facing switch.
+
+There is no self-service bypass: re-sending this command, with or without a comment
+marker, will be blocked again. If the shell is genuinely required, say so and let the
+user decide — they can run `/guardrail assist` (selective) or `/guardrail off`, set
+PI_BASH_GUARDRAIL=off, or type the exact command themselves.
+```
+
+When no tool equivalent is recognised the refusal simply lists the tool surface;
+the block is unconditional either way. The classifier runs in its own
+`try/catch` here, so a classifier bug degrades the *hint*, never the lock.
+
+The sections below describe **`assist`** mode.
 
 ### BLOCK — single intent, exact equivalent, nothing executed
 
@@ -88,39 +139,50 @@ any command whose flags are not fully understood.
 
 ## Safety properties
 
-1. **Fails open.** Every handler is wrapped in `try/catch`; any exception leaves
-   `bash` untouched (verified by forcing the classifier to throw).
-2. **Never blocks the same command twice.** The second identical attempt runs and
-   gets an explanatory nudge instead, so a wrong block can cost at most one turn
-   and a block/retry loop is structurally impossible.
+0. **In lockdown, no agent-controllable bypass exists.** Not the escape marker,
+   not a retry, not a failing tool-detection call. The only pass-through is a
+   command found verbatim in a recent *user* message — which the agent cannot
+   fabricate. Prose like "use the shell for this" relaxes `assist` only.
+1. **Fails open on internal errors.** Every handler is wrapped in `try/catch`; an
+   exception leaves `bash` untouched (verified by forcing the classifier to
+   throw), because a broken extension must not make the shell unusable.
+2. **Never blocks the same command twice** *(assist only)*. The second identical
+   attempt runs and gets an explanatory nudge instead, so a wrong block can cost
+   at most one turn and a block/retry loop is structurally impossible. In
+   lockdown this rule is deliberately absent — it would be a bypass.
 3. **Never blocks a command the user dictated.** Recent user messages are checked
    for the command verbatim (with the `cd …` prefix stripped); a match allows it.
-4. **Never points at a tool that is not loaded.** `pi.getActiveTools()` is checked
-   per call; if the replacement tool is inactive the command is allowed, and if
-   tool detection fails entirely the block degrades to a nudge.
+4. **Never points at a tool that is not loaded** *(assist only)*.
+   `pi.getActiveTools()` is checked per call; if the replacement tool is inactive
+   the command is allowed, and if tool detection fails entirely the block
+   degrades to a nudge. In lockdown this only decides whether a *hint* is shown.
 5. **Never inspects a heredoc body.** Scanning stops at `<<`.
 6. **Precision over recall.** On a hand-labelled sample of 200 real commands from
    `~/.pi/agent/sessions`: BLOCK precision **77/77 = 100%**, recall 95%;
    NUDGE precision 92% (0 false positives against the ALLOW class).
-7. **Never blocks a command the user asked for in words either** — "use a shell
-   one-liner to …", "run this command", "with bash" all disable the block for
-   that call (added after a live run showed such a request being blocked and
-   costing a turn).
+7. **In `assist`, a worded shell request also disables the block** — "use a shell
+   one-liner to …", "run this command", "with bash" (added after a live run showed
+   such a request being blocked and costing a turn). This heuristic is fuzzy, so
+   lockdown ignores it and requires the verbatim command instead.
 8. **Recovery is measured, not assumed.** Across 10 live blocks the agent
    recovered within one extra turn every time — by switching to the suggested
    tool, by re-sending with `# guardrail:allow`, or by hitting the never-block-
-   twice rule. No block/retry loop ever formed.
+   twice rule. No block/retry loop ever formed. *(Measured under `assist`
+   semantics, before the escape marker was restricted to re-sends.)*
 
 ## Escape hatches and configuration
 
+The first two are **user-only** — they are what makes this a guardrail rather
+than a suggestion.
+
 | What | How |
 |---|---|
-| Force one command through | append `# guardrail:allow` to it |
-| Never block, only nudge | `PI_BASH_GUARDRAIL=nudge` |
-| Disable completely | `PI_BASH_GUARDRAIL=off` |
-| Change mode mid-session | `/guardrail on\|nudge\|off` |
+| Lift the lockdown | `/guardrail assist\|nudge\|off`, or `PI_BASH_GUARDRAIL=…` |
+| Let one command through | type it yourself in a message; a verbatim match runs |
+| Force one command through *(assist only)* | append `# guardrail:allow` — **only valid as a re-send of a command that was already blocked**; pre-emptive use is ignored and logged as `escape-hatch-ignored-not-blocked` |
+| Change mode mid-session | `/guardrail on\|assist\|nudge\|off` |
 | See intervention counters | `/guardrail` |
-| Machine-readable audit log | `PI_BASH_GUARDRAIL_LOG=/path/to/log.jsonl` (one JSON object per decision) |
+| Machine-readable audit log | `PI_BASH_GUARDRAIL_LOG=/path/to/log.jsonl` (one JSON object per decision; lockdown blocks carry `why:"lockdown"` and `escapeAttempt:true` when the agent tried the marker) |
 
 ## Install
 
@@ -158,7 +220,14 @@ Where it does fire (measured live):
 | `rm`/`mkdir`/`cp` in bash | routed to `file_ops`, i.e. a preview + explicit approval instead of a silent mutation |
 | `env \| grep TOKEN`, `echo $SECRET` | refused before a secret value could enter the transcript |
 | Replacement tool excluded (`--exclude-tools read`) | allowed, logged `tool-not-active` |
-| Classifier forced to throw | bash still executed; error logged only |
+| Classifier forced to throw | *(assist)* bash still executed, error logged only; *(lockdown)* still blocked, hint omitted |
+| Agent appends `# guardrail:allow` pre-emptively | *(lockdown)* blocked and logged `escapeAttempt:true`; *(assist)* marker ignored, command classified normally |
+
+**Lockdown is a policy, not an optimisation.** It will block legitimate shell
+work — builds, ad-hoc pipelines, anything with no tool equivalent — and the
+agent's only recourse is to ask. That cost is the point: it is the difference
+between the agent deciding when the shell is acceptable and the user deciding.
+Run `assist` if you want the measured, low-friction behaviour instead.
 
 On the full 1963-command historical corpus the mix would have been
 **15% block / 39% nudge / 46% allow** (nudge *text* is deduped to ≤1 line per
@@ -178,9 +247,10 @@ this is not statically decidable). Consequences, both implemented:
 
 - recursive greps whose whole point is an exact count (`-c`, `| wc -l`) are
   **never blocked**, only nudged;
-- every other recursive grep block carries that measured example in its note
-  together with the instruction to re-send with `# guardrail:allow` if the result
-  looks suspiciously empty.
+- every other recursive grep block carries that measured example in its note, so
+  a suspiciously empty tool result is recognised rather than trusted. In
+  `assist` the agent may then re-send the original command with
+  `# guardrail:allow`; in lockdown it must say so and let the user decide.
 
 ## Tests
 
@@ -196,6 +266,6 @@ edge cases (unbalanced quotes, 50KB commands, NUL bytes, emoji) at the parser.
 
 ## Files
 
-- `index.ts` — hook wiring, gating (mode, availability, user-dictated, anti-loop), counters, `/guardrail`
+- `index.ts` — hook wiring, modes (lockdown/assist/nudge/off), gating (availability, user-dictated, anti-loop), counters, `/guardrail`
 - `classify.ts` — command → decision mapping, one recogniser per intent
 - `parse.ts` — conservative shell reader (quoting, separators, redirections, bail flags)

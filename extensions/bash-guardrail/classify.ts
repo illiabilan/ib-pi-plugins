@@ -82,7 +82,7 @@ const hasGlob = (ws: Word[]): boolean => ws.some(isGlob);
 
 const bin = (w: string): string => w.replace(/^.*\//, "");
 
-function renderCall(c: Call): string {
+export function renderCall(c: Call): string {
   return `${c.tool} ${JSON.stringify(c.args)}`;
 }
 
@@ -95,7 +95,7 @@ export function renderBlock(d: Extract<Decision, { kind: "block" }>): string {
   ];
   for (const n of d.notes) lines.push(`Note: ${n}`);
   lines.push(
-    `If you genuinely need the shell for this (verbatim user instruction, semantics the tool cannot express), re-send the SAME command with \` # guardrail:allow\` appended and it will run unmodified. Do not retry it unchanged.`,
+    `If you genuinely need the shell for this (semantics the tool cannot express), re-send the SAME command with \` # guardrail:allow\` appended — the marker only works as a re-send of a command that was already blocked, never pre-emptively. Do not retry it unchanged, and do not add the marker to a command that was not blocked.`,
   );
   return lines.join("\n");
 }
@@ -822,7 +822,7 @@ export function breToEre(p: string): string | null {
  * no block at all when the command's whole point is an exact count.
  */
 const RG_GITIGNORE_NOTE =
-  "CAVEAT: the grep tool uses ripgrep, which skips .gitignore'd files (build/, generated output, node_modules) while plain `grep -r` searches them. Measured case: 647 matching lines in bash vs 0 through the tool, because the matches lived in a gitignored build/ subtree. If the tool's result is empty or much smaller than you expect, re-send the original command with ` # guardrail:allow`.";
+  "CAVEAT: the grep tool uses ripgrep, which skips .gitignore'd files (build/, generated output, node_modules) while plain `grep -r` searches them. Measured case: 647 matching lines in bash vs 0 through the tool, because the matches lived in a gitignored build/ subtree. If the tool's result is empty or much smaller than you expect, say so instead of guessing — in assist mode you may re-send the original command with ` # guardrail:allow` (valid only as a re-send of this blocked command), and in lockdown ask the user to run it or to switch mode.";
 
 function recognizeGrep(words: Word[], ctx: Ctx, extra: { limit?: number; countMode?: boolean }): Decision | null {
   const prog = bin(words[0].v);
