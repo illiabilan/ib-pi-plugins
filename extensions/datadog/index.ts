@@ -42,18 +42,66 @@ type Creds = {
 };
 
 /**
+ * Every Datadog site, as of the public documentation. DD_SITE is matched against this
+ * list and nothing else.
+ *
+ * Why an allow-list and not just normalisation: the site becomes the request host
+ * (`api.<site>`) and the API key + application key travel in the REQUEST HEADERS. A
+ * bogus site therefore does not fail closed — it ships live credentials to whatever
+ * host was named. DD_SITE is read from the environment (and, in the fallback path,
+ * from a login shell that may have sourced a project-local .envrc/.env), so its value
+ * is not necessarily something the user typed deliberately. One typo-squatted or
+ * injected value would be a silent credential exfiltration with a successful-looking
+ * 401. Refusing an unknown site turns that into a loud, harmless error.
+ */
+const KNOWN_SITES = new Set([
+  "datadoghq.com",
+  "us3.datadoghq.com",
+  "us5.datadoghq.com",
+  "datadoghq.eu",
+  "ap1.datadoghq.com",
+  "ap2.datadoghq.com",
+  "ddog-gov.com",
+]);
+
+/**
  * Datadog API hosts are api.<site>. Users almost always copy the *app* URL out of the
  * browser, so accept every shape of that and normalise: "https://app.datadoghq.eu/",
  * "app.datadoghq.eu", "api.datadoghq.eu", "datadoghq.eu" -> "datadoghq.eu".
+ *
+ * Returns null for anything not in KNOWN_SITES; callers turn that into a refusal
+ * BEFORE any request is made, so credentials never leave the process.
  */
-function normalizeSite(raw?: string): string {
+function normalizeSite(raw?: string): string | null {
   let s = (raw ?? "").trim().toLowerCase();
   if (!s) return DEFAULT_SITE;
-  s = s.replace(/^https?:\/\//, "").replace(/\/.*$/, "").replace(/^(app|api)\./, "");
-  return s || DEFAULT_SITE;
+  s = s
+    .replace(/^https?:\/\//, "")
+    .replace(/\/.*$/, "")
+    .replace(/:\d+$/, "")
+    .replace(/^(app|api)\./, "");
+  if (!s) return DEFAULT_SITE;
+  return KNOWN_SITES.has(s) ? s : null;
+}
+
+function badSiteError(raw: string | undefined): string {
+  return [
+    `Refusing to use DD_SITE="${String(raw).slice(0, 80)}": it is not a known Datadog site.`,
+    ``,
+    `The site becomes the API host (api.<site>) and your DD_API_KEY / DD_APP_KEY are sent`,
+    `in the request headers, so an unrecognised host would receive live credentials.`,
+    `Nothing was sent.`,
+    ``,
+    `Valid values: ${[...KNOWN_SITES].join(", ")}.`,
+    `Check your shell profile (and any project-local .envrc/.env that may have set DD_SITE).`,
+  ].join("\n");
 }
 
 const isToken = (v?: string) => !!v && /^dd(pat|sat)_/.test(v);
+
+/** A configured-but-unusable site. Propagated instead of Creds so nothing is ever sent. */
+type BadSite = { badSite: string };
+const isBadSite = (v: unknown): v is BadSite => !!v && typeof v === "object" && "badSite" in (v as object);
 
 function buildCreds(
   apiKeyRaw: string | undefined,
@@ -61,10 +109,12 @@ function buildCreds(
   tokenRaw: string | undefined,
   siteRaw: string | undefined,
   source: Creds["source"],
-): Creds | null {
+): Creds | BadSite | null {
   const apiKey = apiKeyRaw?.trim() || undefined;
   const appKey = appKeyRaw?.trim() || undefined;
   const site = normalizeSite(siteRaw);
+  // Unknown site: refuse rather than send credentials to an unexpected host.
+  if (site === null) return { badSite: siteRaw ?? "" } satisfies BadSite;
   // An explicit bearer token wins; a ddpat_/ddsat_ value parked in DD_APP_KEY counts as one.
   const token = tokenRaw?.trim() || (isToken(appKey) ? appKey : undefined);
   if (token) return { site, scheme: "bearer", token, apiKey, source };
@@ -75,7 +125,7 @@ function buildCreds(
 let credsCache: Creds | null = null;
 let credsPromise: Promise<Creds | { error: string; source: "none" }> | null = null;
 
-const fromEnv = (): Creds | null =>
+const fromEnv = (): Creds | BadSite | null =>
   buildCreds(
     process.env.DD_API_KEY ?? process.env.DATADOG_API_KEY,
     process.env.DD_APP_KEY ?? process.env.DD_APPLICATION_KEY ?? process.env.DATADOG_APP_KEY,
@@ -85,7 +135,7 @@ const fromEnv = (): Creds | null =>
   );
 
 /** Fallback: pi may have been launched without a login shell (GUI launch, cron, CI). */
-function fromLoginShell(): Promise<Creds | null> {
+function fromLoginShell(): Promise<Creds | BadSite | null> {
   return new Promise((resolve) => {
     const shell = process.env.SHELL || "/bin/zsh";
     if (!PROFILES.some((p) => existsSync(join(homedir(), p)))) return resolve(null);
@@ -129,8 +179,18 @@ async function getCreds(): Promise<Creds | { error: string; source: "none" }> {
   if (!credsPromise) {
     credsPromise = (async () => {
       const direct = fromEnv();
+      // A bad DD_SITE is a hard stop, not a reason to fall through to the shell probe:
+      // falling through would re-read the same variable and hide the real problem.
+      if (isBadSite(direct)) {
+        credsPromise = null;
+        return { error: badSiteError(direct.badSite), source: "none" as const };
+      }
       if (direct) return (credsCache = direct);
       const shellCreds = await fromLoginShell();
+      if (isBadSite(shellCreds)) {
+        credsPromise = null;
+        return { error: badSiteError(shellCreds.badSite), source: "none" as const };
+      }
       if (shellCreds) return (credsCache = shellCreds);
       credsPromise = null; // allow a retry once the user fixes their profile
       return { error: SETUP_HELP, source: "none" as const };
@@ -346,7 +406,41 @@ export type DatadogToolInput = Static<typeof schema>;
  * per-process, so a token can neither be guessed nor replayed in another session.
  */
 const TOKEN_SALT = randomBytes(16).toString("hex");
-const issuedTokens = new Set<string>();
+
+/**
+ * Issued tokens, each remembered together with the number of USER messages that existed
+ * when the preview was produced.
+ *
+ * Why the turn count and not just the token: a token proves the payload is unchanged, it
+ * does NOT prove a human approved it. The model can read the token out of its own tool
+ * result and replay it immediately, in the same turn — observed behaviour in this repo's
+ * own validation runs, not a hypothetical. Requiring a NEW user message between preview
+ * and confirm means the approval has to come from an actual human turn.
+ */
+const issuedTokens = new Map<string, { userTurns: number; when: number }>();
+
+/** Number of user messages in the current session branch. */
+function userTurnCount(ctx: { sessionManager?: any }): number {
+  try {
+    const entries = (ctx.sessionManager?.getBranch?.() ?? ctx.sessionManager?.getEntries?.() ?? []) as Array<{
+      type?: string;
+      message?: { role?: string };
+    }>;
+    return entries.filter((e) => e?.type === "message" && e.message?.role === "user").length;
+  } catch {
+    // Cannot tell how many turns happened -> cannot prove the user approved -> treat every
+    // replay as same-turn. Fails CLOSED: the worst case is one extra round-trip.
+    return Number.POSITIVE_INFINITY;
+  }
+}
+
+function rememberToken(token: string, ctx: { sessionManager?: any }): void {
+  if (issuedTokens.size >= 50) {
+    const oldest = [...issuedTokens.entries()].sort((a, b) => a[1].when - b[1].when)[0];
+    if (oldest) issuedTokens.delete(oldest[0]);
+  }
+  if (!issuedTokens.has(token)) issuedTokens.set(token, { userTurns: userTurnCount(ctx), when: Date.now() });
+}
 
 const writePayload = (p: DatadogToolInput) =>
   JSON.stringify({
@@ -454,7 +548,7 @@ Read actions (run immediately):
   dashboards {query} / dashboard {id} — list dashboards / show one dashboard's widget inventory
   slos {query} / hosts {query}    — SLO definitions / reporting hosts
 
-Write actions (mute_monitor, unmute_monitor, post_event) change state visible to the whole org and are never auto-run: interactive sessions get a confirm dialog on the call itself; non-interactive ones get back "PREVIEW ONLY" plus a one-time confirm_token to relay, which is then passed back in an identical call after the user approves.
+Write actions (mute_monitor, unmute_monitor, post_event) change state visible to the whole org and are never auto-run: interactive sessions get a confirm dialog on the call itself; non-interactive ones get back "PREVIEW ONLY" plus a one-time confirm_token to relay, which is then passed back in an identical call after the user approves. Replaying that token in the SAME turn is refused ("self-approval-blocked"): a user message must arrive between the preview and the confirm.
 
 Time windows accept 'now-15m', '-2h', '3d', ISO timestamps or epoch values.
 Examples:
@@ -470,7 +564,8 @@ Every result ends with a "config_source:" marker: "env" means credentials came f
       "When investigating an incident with datadog, start with {action:'logs_aggregate', group_by:'service'} or {action:'monitors', query:'status:alert'} to find WHERE the problem is, then drill into {action:'logs'} or {action:'spans'} for individual events — pulling raw log lines first wastes context.",
       "Never guess metric names for datadog action='metrics': call {action:'metric_search', query:'<substring>'} first, because a wrong metric name returns an empty series that looks exactly like a healthy one.",
       "datadog actions mute_monitor, unmute_monitor and post_event change state the whole org sees: call the action once with full parameters and let the tool present it for approval — do not ask for permission in prose first, and never retry a declined write.",
-      "When a datadog write returns 'PREVIEW ONLY', nothing was sent: relay the preview verbatim, end the turn, and only repeat the identical call with confirm_token after the user replies approving it. Never pass confirm_token in the same turn as the preview that issued it, and never invent or reuse one.",
+      "When a datadog write returns 'PREVIEW ONLY', nothing was sent: relay the preview verbatim, end the turn, and only repeat the identical call with confirm_token after the user replies approving it. Never pass confirm_token in the same turn as the preview that issued it (the tool refuses it as 'self-approval-blocked'), and never invent or reuse one.",
+      "If datadog refuses DD_SITE as unknown, do not try another host or work around it: the site is the API host that would receive the credentials. Report the message and let the user fix their environment.",
       "Keep datadog time windows as narrow as the question allows (from:'-15m' for a live incident, '-24h' for a trend); a wide window on a busy service is slower, rate-limit-prone and truncated anyway.",
       "If datadog returns HTTP 403, the key or token is valid but missing a scope (e.g. logs_read_data, timeseries_query, apm_read) — tell the user which scope to add instead of retrying; on HTTP 401 the credential is invalid/expired, and on 404 check DD_SITE matches the org.",
       "If a datadog result reports config_source: shell-profile, note that pi did not inherit the DD_* env vars and the user should restart pi from a shell where their profile is loaded.",
@@ -501,7 +596,7 @@ Every result ends with a "config_source:" marker: "env" means credentials came f
         } else {
           const expected = tokenFor(params);
           if (params.confirm_token !== expected || !issuedTokens.has(expected)) {
-            issuedTokens.add(expected);
+            rememberToken(expected, ctx);
             return {
               content: [
                 {
@@ -524,6 +619,30 @@ Every result ends with a "config_source:" marker: "env" means credentials came f
                 },
               ],
               details: { action: params.action, previewPending: true, confirmToken: expected },
+            };
+          }
+
+          // Token matches a real preview. It still only counts as approval if a USER message
+          // arrived after that preview: otherwise the model is approving its own request.
+          const issued = issuedTokens.get(expected)!;
+          if (userTurnCount(ctx) <= issued.userTurns) {
+            return {
+              content: [
+                {
+                  type: "text" as const,
+                  text: [
+                    `NOT SENT — you are replaying the confirm_token in the same turn that produced the preview,`,
+                    `so the user has not actually approved anything.`,
+                    ``,
+                    `datadog ${params.action}`,
+                    preview,
+                    ``,
+                    `Stop here. Show the preview to the user, END YOUR TURN, and only repeat this call after they reply approving it.`,
+                  ].join("\n"),
+                },
+              ],
+              details: { action: params.action, executed: false, error: "self-approval-blocked" },
+              isError: true,
             };
           }
           issuedTokens.delete(expected); // single use

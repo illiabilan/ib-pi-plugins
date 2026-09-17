@@ -29,13 +29,25 @@
  *   in the allow-list, so a prompt injected through design content cannot reach
  *   them.
  * - mode:"write" hands over the whole server and is therefore opt-in per call.
+ * - The child runs in an empty scratch directory, not pi's project directory, so the
+ *   read-only file tools it keeps (needed to re-read oversized MCP responses) cannot
+ *   reach the user's source, .env or credentials. mode:"assets" is the deliberate
+ *   exception: it must write images into a real directory.
+ * - The child's environment is an ALLOW-LIST (PATH/HOME/proxy/Claude's own auth). pi's
+ *   process env carries SLACK_TOKEN, DD_API_KEY, JIRA_API_TOKEN, GH_TOKEN and provider
+ *   keys; none of them are needed to read a design, so none of them are inherited.
+ *
+ * Both of the last two exist because the input is untrusted: text inside a Figma file is
+ * attacker-controllable and ends up in the child's context. Treat every such call as
+ * "a stranger writes part of the prompt".
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type, type Static } from "typebox";
 import { Text } from "@earendil-works/pi-tui";
 import { spawn } from "node:child_process";
-import { homedir } from "node:os";
+import { mkdtempSync, rmSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 
 /** Hard cap on returned text. */
@@ -186,6 +198,56 @@ interface RunOutcome {
  * direct pid leaves those running and the timeout would not actually free the
  * machine.
  */
+/**
+ * Environment handed to the child.
+ *
+ * pi's own process environment holds every credential the user has exported —
+ * SLACK_TOKEN/SLACK_COOKIE, DD_API_KEY/DD_APP_KEY, JIRA_API_TOKEN, GH_TOKEN,
+ * provider API keys. None of that is needed to ask Claude about a Figma frame, and
+ * the child is driven by UNTRUSTED input: the text inside a Figma design is
+ * attacker-controllable and lands in the child's context, which is the textbook
+ * prompt-injection setup. So the child gets an allow-list: what a CLI needs to run
+ * plus what Claude Code needs to authenticate ITSELF.
+ *
+ * Anything not listed here simply does not exist inside the subprocess.
+ */
+const ENV_ALLOW_EXACT = new Set([
+  "PATH",
+  "HOME",
+  "USER",
+  "LOGNAME",
+  "SHELL",
+  "TMPDIR",
+  "TERM",
+  "LANG",
+  "LC_ALL",
+  "TZ",
+  "NODE_EXTRA_CA_CERTS",
+  "SSL_CERT_FILE",
+  "HTTP_PROXY",
+  "HTTPS_PROXY",
+  "NO_PROXY",
+  "http_proxy",
+  "https_proxy",
+  "no_proxy",
+  // Claude Code's own auth/config. Without these the bridge cannot log in at all.
+  "ANTHROPIC_API_KEY",
+  "ANTHROPIC_AUTH_TOKEN",
+  "ANTHROPIC_BASE_URL",
+  "CLAUDE_CONFIG_DIR",
+  "CLAUDE_CODE_USE_BEDROCK",
+  "CLAUDE_CODE_USE_VERTEX",
+]);
+
+function childEnv(): NodeJS.ProcessEnv {
+  const out: NodeJS.ProcessEnv = {};
+  for (const [k, v] of Object.entries(process.env)) {
+    if (v === undefined) continue;
+    if (ENV_ALLOW_EXACT.has(k)) out[k] = v;
+  }
+  return out;
+}
+
 function run(
   cmd: string,
   args: string[],
@@ -198,7 +260,7 @@ function run(
         cwd: opts.cwd,
         detached: true,
         stdio: ["ignore", "pipe", "pipe"],
-        env: process.env,
+        env: childEnv(),
       });
     } catch (e: any) {
       reject(e);
@@ -343,6 +405,27 @@ async function runAsk(
     ? `Figma link: ${p.figmaUrl.trim()}\n\n${prompt}`
     : prompt;
 
+  /*
+   * Working directory = file-read scope.
+   *
+   * `--restricted` confines Read/Grep/Glob to the child's cwd plus every --add-dir.
+   * Running it in pi's project directory therefore handed the child the whole repo,
+   * including .env / .envrc / credentials checked out locally — and the child's
+   * context is filled with UNTRUSTED text from the Figma design, which can instruct
+   * it to read a file and paste the contents into its answer.
+   *
+   * So: an empty scratch directory by default. The file tools exist only to re-read
+   * oversized MCP responses that Claude parked under CLAUDE_TOOL_RESULTS_DIR, and
+   * that path is added explicitly.
+   *
+   * mode:'assets' is the documented exception — its whole purpose is writing
+   * downloaded images into a real directory, so that directory is the cwd and is
+   * necessarily readable. That is why 'assets' must be asked for deliberately.
+   */
+  const wantsRealDir = mode === "assets";
+  const scratchDir = wantsRealDir ? null : mkdtempSync(join(tmpdir(), "pi-figma-"));
+  const workDir = wantsRealDir ? p.cwd || ctxCwd : scratchDir!;
+
   const args = [
     "-p",
     fullPrompt,
@@ -351,8 +434,9 @@ async function runAsk(
     "--model",
     model,
     // Read-only file tools only (no Bash/Edit/Write/WebFetch), and --restricted
-    // confines them to the working directories below, so a prompt injected via
-    // design content cannot reach ~/.ssh or anything outside them.
+    // confines them to cwd + the --add-dir list, which for a read/write call is an
+    // empty scratch dir plus Claude's own tool-results dir. Nothing of the user's
+    // project, and nothing like ~/.ssh, is reachable.
     "--tools",
     FILE_TOOLS.join(","),
     "--restricted",
@@ -372,7 +456,7 @@ async function runAsk(
   let out: RunOutcome;
   try {
     out = await run("claude", args, {
-      cwd: p.cwd || ctxCwd,
+      cwd: workDir,
       timeoutMs: timeoutSec * 1_000,
       signal,
     });
@@ -382,6 +466,14 @@ async function runAsk(
         "figma: the `claude` CLI is not installed or not on PATH. This tool bridges to Figma through Claude Code; install it, then run `claude mcp login figma`.",
       );
     throw e;
+  } finally {
+    if (scratchDir) {
+      try {
+        rmSync(scratchDir, { recursive: true, force: true });
+      } catch {
+        /* best effort: an empty temp dir left behind is harmless */
+      }
+    }
   }
 
   if (out.timedOut)

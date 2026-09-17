@@ -24,8 +24,15 @@ export DD_SITE="datadoghq.com"       # MUST match your browser URL
 ```
 
 `DD_SITE` values: `datadoghq.com` (US1), `datadoghq.eu` (EU1), `us3.datadoghq.com`,
-`us5.datadoghq.com`, `ap1.datadoghq.com`, `ddog-gov.com`. The tool normalises pasted app
-URLs, so `https://app.datadoghq.eu/` also works.
+`us5.datadoghq.com`, `ap1.datadoghq.com`, `ap2.datadoghq.com`, `ddog-gov.com`. The tool
+normalises pasted app URLs, so `https://app.datadoghq.eu/` also works.
+
+Anything else is **refused before the first request**, with no call made. The site becomes
+the request host (`api.<site>`) while the API key and application key travel in the request
+*headers*, so an unrecognised site would not fail closed — it would hand live credentials to
+whatever host was named and come back with an ordinary-looking `401`. `DD_SITE` is read from
+the environment, which a login shell may have populated from a project-local `.envrc`/`.env`,
+so its value is not necessarily something the user typed on purpose.
 
 If `DD_BEARER_TOKEN` is set it **wins** over the key pair. A `ddpat_`/`ddsat_` value placed
 in `DD_APP_KEY` is auto-detected as a token, so migrating needs no config change.
@@ -73,7 +80,11 @@ Writes are never auto-run:
 
 - **Interactive session** — the call itself raises a confirm dialog showing the resolved payload.
 - **Non-interactive** (`--mode json`, subagents, CI) — the call returns `PREVIEW ONLY` plus a
-  single-use `confirm_token` bound to a hash of that exact payload. The identical call repeated
+  single-use `confirm_token` bound to a hash of that exact payload, and the number of user
+  messages at that moment is recorded. Replaying the token in the *same* turn is refused with
+  `self-approval-blocked`: a token proves the payload is unchanged, not that a human agreed,
+  and a model will read the token out of its own tool result and confirm itself. A new user
+  message must arrive between preview and confirm. The identical call repeated
   with the token executes; changing any field voids it. The salt is per-process, so tokens
   cannot be guessed or replayed across sessions.
 

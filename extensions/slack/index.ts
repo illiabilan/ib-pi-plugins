@@ -209,8 +209,11 @@ function loadNames(): NameCache {
 
 function saveNames(): void {
   try {
-    mkdirSync(CACHE_DIR, { recursive: true });
-    writeFileSync(CACHE_FILE, JSON.stringify(names ?? { users: {}, channels: {} }));
+    // 0700/0600: this maps Slack ids to the real names of the user's colleagues and
+    // private channels. It is not a secret, but it is other people's data and there is
+    // no reason for every account on the machine to be able to read it.
+    mkdirSync(CACHE_DIR, { recursive: true, mode: 0o700 });
+    writeFileSync(CACHE_FILE, JSON.stringify(names ?? { users: {}, channels: {} }), { mode: 0o600 });
   } catch {
     /* cache is best-effort */
   }

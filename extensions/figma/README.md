@@ -52,8 +52,21 @@ Verify from pi: `figma {"action":"status"}`.
 
 The child process runs with:
 
+- **An empty scratch directory as cwd** (`mkdtemp`, removed after the call), *not*
+  pi's project directory. `--restricted` scopes the file tools to cwd + `--add-dir`,
+  so running the child inside the repo would have handed it every file there —
+  including `.env`, `.envrc` and locally checked-out credentials. The text inside a
+  Figma file is untrusted input that lands in the child's context, so "read this
+  file and include it in your answer" is a realistic instruction to find in a
+  design. `mode:"assets"` is the deliberate exception: it must write downloaded
+  images into a real directory, which is therefore also readable — that is why it
+  has to be requested explicitly.
+- **An allow-listed environment.** The child gets `PATH`/`HOME`/proxy vars and
+  Claude's own auth variables, and nothing else. pi's process environment carries
+  `SLACK_TOKEN`, `DD_API_KEY`, `JIRA_API_TOKEN`, `GH_TOKEN` and provider keys; none
+  of them are needed to read a design, so none of them exist inside the subprocess.
 - `--tools "Read,Grep,Glob"` + `--restricted` — no Bash/Edit/Write/WebFetch, and the
-  read-only file tools are confined to the working directory plus
+  read-only file tools are confined to the scratch directory plus
   `~/.claude/projects`. Verified: a prompt asking to read
   `~/.pi/agent/mcp.json` was refused with
   *"is outside ... --restricted confines the file tools to the working directory"*
