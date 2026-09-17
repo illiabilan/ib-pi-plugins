@@ -12,8 +12,10 @@ pi-plugins/
 │   ├── bash-guardrail/
 │   ├── code-search/
 │   ├── code_viewer/
+│   ├── datadog/
 │   ├── diff/
 │   ├── env-info/
+│   ├── figma/
 │   ├── file-ops/
 │   ├── file-write-plus/
 │   ├── gh/
@@ -28,6 +30,8 @@ pi-plugins/
 │   ├── pi-trace/
 │   ├── podman-sandbox/
 │   ├── process/
+│   ├── slack/
+│   ├── sound-notify/
 │   ├── subagent/
 │   └── token-stats/
 ├── skills/         # SKILL.md packages, loaded on-demand
@@ -97,7 +101,7 @@ its own numbers.
 | `diff` | `diff` | `diff -u a b \| head` | 40 |
 | `env-info` | `env_info` | `which`, `command -v`, `env \| grep KEY` | 28 |
 | `archive-inspect` | `archive_inspect` | `unzip` + `javap` over gradle-cache jars | 24 |
-| `gh` | `gh` | `gh pr create/view/search/merge` | 15 |
+| `gh` | `gh` | `gh pr create/view/search/merge`, `gh run list/view/rerun` | 15 |
 | `bash-guardrail` | *(no tool)* | intercepts leftover bash habits | — |
 
 Highlights from validation: `list_files` matches `find` byte-for-byte on 23715
@@ -109,15 +113,51 @@ reproduces `javap` output byte-identically.
 
 #### `extensions/bash-guardrail`
 A `tool_call` interceptor (registers no tool, so it costs **0 prompt tokens**).
-Blocks single-intent bash commands that have an exact tool equivalent —
-answering with the concrete replacement call, arguments already filled in —
-nudges composite pipelines, and silently allows real shell work. Fails open.
-BLOCK precision measured at 100% (0 false blocks) on 200 hand-labelled commands
-drawn from 1963 real bash calls. `/guardrail` toggles block → nudge-only → off.
+Four modes: `on` (**lockdown, the default** — every bash call is blocked,
+with no agent-controllable bypass), `assist` (block single-intent commands
+that have an exact tool equivalent, answering with the concrete replacement
+call, arguments already filled in; nudge composites; allow real shell work),
+`nudge`, `off`. The only bypass that survives lockdown is human: a command
+the user typed verbatim. BLOCK precision in assist mode measured at 100%
+(0 false blocks) on 200 hand-labelled commands drawn from 1963 real bash
+calls. `/guardrail <mode>` switches at runtime.
 
 #### `extensions/jira`
 Jira integration for Pi. Read, search, create, update, and link Jira issues
 via the Jira REST API. Supports custom field conventions and JQL queries.
+Also does local backlog de-duplication (`find_duplicates`: similarity
+clustering over a project/JQL/board scope) and approval-gated bulk cleanup
+(`transition`/`comment`/`delete` with `issue_keys[]` batching).
+
+### External services
+
+#### `extensions/datadog`
+`datadog` tool over the Datadog REST API: `logs`, `logs_aggregate`,
+`metrics` (series reduced to min/avg/max/last + sparkline), `metric_search`,
+`monitors`, `spans`, `events`, `dashboards`, `slos`, `hosts`. Writes
+(`mute_monitor`, `unmute_monitor`, `post_event`) are preview-first and
+approval-gated. Credentials from `DD_API_KEY`+`DD_APP_KEY` or
+`DD_BEARER_TOKEN` + `DD_SITE`, with a login-shell fallback; 401/403/404 are
+translated into which credential or scope is wrong. See
+`extensions/datadog/README.md`.
+
+#### `extensions/slack`
+`slack` tool authenticated with the user's own browser client tokens
+(xoxc/xoxd), so it sees exactly what they see — every channel, DM, private
+group and search, not just what a bot was invited to. `resolve` turns a
+pasted message permalink into the whole thread as readable text; plus
+`history`, `thread`, `search`, `channels`, `users`, `mentions`. `post`,
+`reply` and `react` speak as the user, so they are approval-gated.
+
+#### `extensions/figma`
+`figma` tool that reads designs (colors, spacing, typography, components,
+variables, screenshots, Code Connect) by delegating to a headless Claude
+Code subprocess holding the Figma MCP session — the hosted Figma server
+allow-lists OAuth clients and rejects pi's registration with HTTP 403, so
+Claude is used purely as an authenticated transport, with all its built-in
+tools disabled. Least-privilege modes: `read` (default), `assets`
+(downloads files), `write` (canvas mutation, opt-in). See
+`extensions/figma/README.md`.
 
 #### `extensions/multi-file-read`
 Efficiently read multiple files in one call with line numbers, per-file limits,
@@ -131,6 +171,15 @@ Podman container per project - separate filesystem root, PID namespace, and
 Fails open with a machine-visible `[podman-sandbox: UNSANDBOXED fallback...]`
 tag when podman is unavailable (or fails closed via config). See
 `extensions/podman-sandbox/README.md`.
+
+#### `extensions/sound-notify`
+Plays a sound when Pi actually needs you: `ask` when an extension opens a
+blocking dialog (`ui_prompt_start`), `done` when the run fully settles
+(`agent_settled`), `error` when it settles after a provider failure. Detached
+`afplay` on macOS with paplay/canberra/powershell/terminal-bell fallbacks,
+per-kind cooldown, silent in `-p`/`--mode json` (so subagents stay quiet),
+env-var configurable, `/sound` command. Registers no tool. See
+`extensions/sound-notify/README.md`.
 
 #### `extensions/subagent`
 Pi's subagent primitive (delegated, isolated-context agent runs). Required
@@ -301,6 +350,12 @@ cp -r extensions/multi-file-read ~/.pi/agent/extensions/multi-file-read
 
 cp -r extensions/subagent ~/.pi/agent/extensions/subagent
 cp -r extensions/token-stats ~/.pi/agent/extensions/token-stats
+cp -r extensions/sound-notify ~/.pi/agent/extensions/sound-notify
+cp -r extensions/datadog ~/.pi/agent/extensions/datadog
+cp -r extensions/slack ~/.pi/agent/extensions/slack
+
+cp -r extensions/figma ~/.pi/agent/extensions/figma
+(cd ~/.pi/agent/extensions/figma && npm install)
 
 cp -r extensions/code_viewer ~/.pi/agent/extensions/code_viewer
 (cd ~/.pi/agent/extensions/code_viewer && npm install)
