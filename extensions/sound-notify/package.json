@@ -1,0 +1,26 @@
+{
+  "name": "pi-sound-notify",
+  "version": "1.0.0",
+  "description": "Audible notification when Pi needs the human: a sound when an extension opens a blocking dialog, when the agent run settles, and when it settles after an error. Detached playback, per-kind cooldown, env-var configurable, silent in -p/json/subagent runs. Registers no tool: zero prompt footprint.",
+  "type": "module",
+  "main": "index.ts",
+  "keywords": [
+    "pi",
+    "pi-extension",
+    "pi-coding-agent",
+    "notification",
+    "sound",
+    "audio",
+    "bell",
+    "afplay"
+  ],
+  "author": "Pi Agent",
+  "license": "MIT",
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "@types/node": "^22.0.0"
+  },
+  "pi": {
+    "extensions": ["./index.ts"]
+  }
+}
