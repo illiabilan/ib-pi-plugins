@@ -1,8 +1,8 @@
 # gh — pi extension
 
 Registers one LLM-callable tool, `gh`, that wraps the [GitHub CLI](https://cli.github.com) for
-PR/issue workflow, plus a `tool_call` guard that stops the agent from routing mutations around it
-through `bash`.
+PR/issue **and CI (GitHub Actions)** workflow, plus a `tool_call` guard that stops the agent from
+routing mutations around it through `bash`.
 
 Two things it fixes about `bash gh ...`:
 
@@ -56,6 +56,14 @@ Every result ends with one machine-readable line:
 | `limit` | pr_list, search_* | default 10, max 100 |
 | `body_limit` | pr_view, issue_view | body chars to include (default 3000, `0` omits the body) |
 | `patch` | pr_diff | `true` → raw patch (capped at 30 000 chars); default is a per-file +/− stat |
+| `workflow` | run_list (filter), workflow_run (required) | name, file name (`ci.yml`) or id |
+| `branch` | run_list, run_* resolution | default for `run_*` without `number`: the current git branch |
+| `status` | run_list, run_* resolution | `queued`\|`in_progress`\|`completed`\|`success`\|`failure`\|`cancelled`\|`skipped`\|`timed_out`\|… (validated locally) |
+| `event` | run_list | `push`, `pull_request`, `schedule`, `workflow_dispatch`, … |
+| `job` | run_log, run_rerun | job **name** (case-insensitive, substring) or job `databaseId` |
+| `failed_only` | run_rerun | `gh run rerun --failed` — only the failed jobs |
+| `ref` | workflow_run | branch/tag (default: current branch, else repo default) |
+| `inputs` | workflow_run | flat `{"key":"value"}` map → `-f key=value` (max 25) |
 | `title`, `body` | pr_create, pr_edit, pr_comment, issue_comment, pr_merge | plain text, newlines/backticks/quotes/emoji safe |
 | `draft` | pr_create | |
 | `reviewers`, `labels` | pr_create, pr_edit | string or array (comma-splitting supported) |
@@ -67,8 +75,9 @@ Every result ends with one machine-readable line:
 ### Actions
 
 Read: `auth_status`, `repo_info`, `pr_list`, `pr_view`, `pr_diff`, `pr_checks`, `search_prs`,
-`search_issues`, `issue_view`.
-Write: `pr_create`, `pr_edit`, `pr_comment`, `pr_ready`, `pr_merge`, `issue_comment`.
+`search_issues`, `issue_view`, `run_list`, `run_view`, `run_log`, `workflow_list`.
+Write: `pr_create`, `pr_edit`, `pr_comment`, `pr_ready`, `pr_merge`, `issue_comment`, `run_rerun`,
+`run_cancel`, `workflow_run`.
 
 ```json
 {"action":"pr_view"}                                        // current branch's PR
@@ -82,6 +91,47 @@ Write: `pr_create`, `pr_edit`, `pr_comment`, `pr_ready`, `pr_merge`, `issue_comm
 {"action":"pr_merge","number":999,"merge_method":"squash","delete_branch":true}
 ```
 
+## CI / GitHub Actions
+
+The triage loop is designed so each result hands the agent the exact next call:
+
+```json
+{"action":"pr_checks","number":22173}   // -> "Failing Actions run id(s): 8912345" + the two calls below
+{"action":"run_view","number":8912345}  // jobs, failed steps, job ids, rerun hint
+{"action":"run_log","number":8912345}   // logs of the FAILED steps only (tail-capped at 20 000 chars)
+{"action":"run_log","number":8912345,"job":"build (ubuntu)"}   // one job's full log
+{"action":"run_rerun","number":8912345,"failed_only":true}     // -> preview/dialog, then reruns
+```
+
+Other entry points:
+
+```json
+{"action":"run_list","status":"failure","branch":"main","limit":5}
+{"action":"run_list","workflow":"ci.yml","event":"schedule"}
+{"action":"run_view"}                       // latest run of the current branch
+{"action":"workflow_list"}
+{"action":"run_rerun","number":8912345,"job":"e2e"}   // one job + its dependencies
+{"action":"run_cancel","number":8912350}
+{"action":"workflow_run","workflow":"deploy.yml","ref":"main","inputs":{"environment":"staging"}}
+```
+
+Things it gets right that hand-written `gh run` calls usually do not:
+
+- **`--job` needs the job `databaseId`.** The number in an Actions `/jobs/<n>` URL is a different
+  id and makes the API answer `404`. Pass `job:"<name>"` and the tool resolves it from
+  `run view --json jobs`; a numeric `job` is *validated* against the run's real job ids and, if it
+  does not match, the error lists every job with its id and state instead of failing at GitHub.
+- **`gh run rerun --job <id>` takes no positional run id** (combining them errors) — the tool emits
+  one form or the other.
+- `failed_only:true` on a run with no failed jobs, and `run_cancel` on a finished run, are refused
+  **locally, before the approval step**, so the user is never asked to confirm a call that cannot work.
+- A run that is still in progress reports "logs are only available for finished jobs" as a normal
+  result (`gh_status: ok`), not as an error — same treatment as `pr_checks` exit code 8.
+- `run_log` keeps the **tail** of the log (failures are at the bottom), unlike the head-capping used
+  for bodies and patches.
+- Omitting `number` on any `run_*` action resolves the latest run of the current branch (optionally
+  narrowed by `workflow`/`status`), and the preview states which run was picked.
+
 ## Which bash idioms it replaces
 
 | bash | gh tool |
@@ -94,6 +144,11 @@ Write: `pr_create`, `pr_edit`, `pr_comment`, `pr_ready`, `pr_merge`, `issue_comm
 | `gh auth status`, `git remote -v` + `gh repo view --json defaultBranchRef` | `{"action":"auth_status"}`, `{"action":"repo_info"}` |
 | `gh pr merge 123 --squash --delete-branch` | `{"action":"pr_merge",...}` (irreversibility spelled out, approval required) |
 | `gh pr comment 5 --body "$(cat <<'EOF' ... EOF)"` | `{"action":"pr_comment","number":5,"body":"..."}` |
+| `gh run list -b main -s failure -L 1 --json databaseId --jq '.[0].databaseId'` | `{"action":"run_list","status":"failure","branch":"main","limit":1}` |
+| `gh run view <id> --json jobs --jq '.jobs[]\|select(.conclusion=="failure")\|{name,databaseId}'` | `{"action":"run_view","number":<id>}` |
+| `gh run view <id> --log-failed \| tail -200` | `{"action":"run_log","number":<id>}` |
+| `gh run rerun <id> --failed` | `{"action":"run_rerun","number":<id>,"failed_only":true}` (+ approval) |
+| `gh workflow run deploy.yml --ref main -f env=staging` | `{"action":"workflow_run",...}` (+ approval) |
 
 ## The approval gate (and why the bash guard exists)
 
@@ -154,3 +209,19 @@ re-ran `gh pr create --body "..."` through the `bash` tool and created the PR an
 - `pr_diff` default stat comes from the PR's `files` list (gh has no `--stat`), capped at 200 files.
 - `pr_checks` treats gh exit code 8 (checks pending) as a normal result, not an error.
 - Titles over 256 chars are flagged in the preview (GitHub's limit) but not auto-truncated.
+- `run_view` uses `gh run view --json jobs`, which [does not always return every job](https://github.com/cli/cli/issues/9341)
+  of a run; for exhaustive job data fall back to `gh api repos/{owner}/{repo}/actions/runs/{id}/jobs`.
+- `run_log` is capped at 20 000 chars (tail) and 50 jobs are listed per `run_view`; GitHub expires
+  Actions logs after ~90 days, which the tool reports as an empty-log result.
+- There is no `run_watch` (a blocking poll does not fit a tool call) and no artifact download.
+
+## Tests
+
+```bash
+node extensions/gh/ui-approval.test.mjs   # interactive write path asks exactly once
+node extensions/gh/ci.test.mjs            # 47 assertions: CI reads, argv shapes, preview gate
+```
+
+`ci.test.mjs` is network-free: it puts a fake `gh`/`git` first on `PATH` and asserts both the
+rendered output **and** the exact argv, including the two forms that 404 in real life (a
+`/jobs/<n>` URL number used as `--job`, and `run rerun --job` with a positional run id).

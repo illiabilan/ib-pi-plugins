@@ -33,6 +33,8 @@ const PREVIEW_BODY_CHARS = 4000;
 const READ_BODY_CHARS = 3000;
 /** Cap for a raw patch returned by pr_diff (patch:true). */
 const PATCH_CHARS = 30_000;
+/** Cap for CI logs (run_log). The TAIL is kept — a failing job's error is at the END of its log. */
+const LOG_CHARS = 20_000;
 /** Default child-process timeout. */
 const GH_TIMEOUT_MS = 60_000;
 const GH_MAX_BUFFER = 32 * 1024 * 1024;
@@ -191,6 +193,12 @@ function cap(text: string, max: number, what: string): string {
   return `${text.slice(0, max)}\n... [truncated at ${max} of ${text.length} chars — ${what}]`;
 }
 
+/** Like cap(), but keeps the END of the text — for logs, where the failure is at the bottom. */
+function capTail(text: string, max: number, what: string): string {
+  if (text.length <= max) return text;
+  return `... [truncated: showing the LAST ${max} of ${text.length} chars — ${what}]\n${text.slice(-max)}`;
+}
+
 /** Shown when a write PREVIEW clips a body. The payload actually sent to gh is never clipped. */
 const BODY_CAP_NOTE =
   "THIS PREVIEW DISPLAY ONLY. The full untruncated text is what gets sent to GitHub when approved";
@@ -228,9 +236,23 @@ const READ_ACTIONS = [
   "search_prs",
   "search_issues",
   "issue_view",
+  "run_list",
+  "run_view",
+  "run_log",
+  "workflow_list",
 ] as const;
 
-const WRITE_ACTIONS = ["pr_create", "pr_edit", "pr_comment", "pr_ready", "pr_merge", "issue_comment"] as const;
+const WRITE_ACTIONS = [
+  "pr_create",
+  "pr_edit",
+  "pr_comment",
+  "pr_ready",
+  "pr_merge",
+  "issue_comment",
+  "run_rerun",
+  "run_cancel",
+  "workflow_run",
+] as const;
 
 const actionEnum = [...READ_ACTIONS, ...WRITE_ACTIONS] as const;
 const writeSet: Set<string> = new Set(WRITE_ACTIONS);
@@ -240,14 +262,17 @@ const schema = Type.Object({
     actionEnum.map((a) => Type.Literal(a)),
     {
       description:
-        "Read: auth_status, repo_info, pr_list, pr_view, pr_diff, pr_checks, search_prs, search_issues, issue_view. " +
-        "Write (preview-first, needs confirm_token): pr_create, pr_edit, pr_comment, pr_ready, pr_merge, issue_comment.",
+        "Read: auth_status, repo_info, pr_list, pr_view, pr_diff, pr_checks, search_prs, search_issues, issue_view, " +
+        "run_list, run_view, run_log, workflow_list. " +
+        "Write (preview-first, needs confirm_token): pr_create, pr_edit, pr_comment, pr_ready, pr_merge, issue_comment, " +
+        "run_rerun, run_cancel, workflow_run.",
     },
   ),
   number: Type.Optional(
     Type.Union([Type.Number(), Type.String()], {
       description:
-        "PR or issue number (or a PR URL/branch name). Omit for pr_view/pr_diff/pr_checks to use the PR of the current branch.",
+        "PR/issue number (or a PR URL/branch name). For run_view/run_log/run_rerun/run_cancel it is the workflow RUN id " +
+        "(an Actions run URL works too). Omit for pr_* to use the current branch's PR, and for run_* to use the latest run on the current branch.",
     }),
   ),
   repo: Type.Optional(
@@ -290,6 +315,40 @@ const schema = Type.Object({
   ),
   patch: Type.Optional(
     Type.Boolean({ description: `pr_diff: return the raw patch (capped at ${PATCH_CHARS} chars) instead of the per-file stat.` }),
+  ),
+  workflow: Type.Optional(
+    Type.String({
+      description:
+        "Workflow name, file name (ci.yml) or id. Filter for run_list; the workflow to dispatch for workflow_run (required there).",
+    }),
+  ),
+  branch: Type.Optional(
+    Type.String({ description: "Branch filter for run_list (default for run_* resolution: the current git branch)." }),
+  ),
+  event: Type.Optional(Type.String({ description: "run_list: trigger event filter, e.g. push | pull_request | schedule | workflow_dispatch." })),
+  status: Type.Optional(
+    Type.String({
+      description:
+        "run_list / run resolution filter: queued | in_progress | completed | success | failure | cancelled | skipped | timed_out | action_required | neutral | stale | startup_failure | requested | waiting | pending.",
+    }),
+  ),
+  job: Type.Optional(
+    Type.Union([Type.Number(), Type.String()], {
+      description:
+        "run_log / run_rerun: a single job of the run, by name (case-insensitive, substring ok) or by job databaseId from run_view. " +
+        "Note the number in an Actions `/jobs/<n>` URL is NOT the job id — pass the name instead and the tool resolves it.",
+    }),
+  ),
+  failed_only: Type.Optional(
+    Type.Boolean({ description: "run_rerun: rerun ONLY the failed jobs (`gh run rerun --failed`) instead of the whole run." }),
+  ),
+  ref: Type.Optional(
+    Type.String({ description: "workflow_run: branch/tag to run the workflow on (default: current branch, else repo default)." }),
+  ),
+  inputs: Type.Optional(
+    Type.Record(Type.String(), Type.String(), {
+      description: 'workflow_run: workflow_dispatch inputs as a flat string map, e.g. {"environment":"staging"}.',
+    }),
   ),
   dry_run: Type.Optional(
     Type.Boolean({
@@ -341,6 +400,9 @@ const SUGGESTED_ACTION: Record<string, string> = {
   "pr merge": "pr_merge",
   "pr ready": "pr_ready",
   "issue comment": "issue_comment",
+  "run rerun": "run_rerun",
+  "run cancel": "run_cancel",
+  "workflow run": "workflow_run",
 };
 
 /** Shell words that can legitimately precede the real command in a segment. */
@@ -504,6 +566,133 @@ function prLine(p: any): string {
     .join("\n");
 }
 
+/* --------------------------------------------------------- CI / Actions */
+
+/** Valid `gh run list --status` values (gh rejects anything else with a bare "invalid value"). */
+const RUN_STATUSES = [
+  "queued", "completed", "in_progress", "requested", "waiting", "pending", "action_required",
+  "cancelled", "failure", "neutral", "skipped", "stale", "startup_failure", "success", "timed_out",
+] as const;
+
+/** Shared field list (valid for both `gh run list` and `gh run view`). */
+const RUN_FIELDS = "databaseId,number,workflowName,displayTitle,headBranch,headSha,event,status,conclusion,createdAt,updatedAt,url";
+
+/** Effective state of a run/job/step: conclusion once finished, status while it is not. */
+const stateOf = (x: any): string => String(x?.conclusion || x?.status || "unknown").toLowerCase();
+
+function icon(state: string): string {
+  if (/^(success|neutral)$/.test(state)) return "✓";
+  if (/(failure|timed_out|startup_failure|action_required)/.test(state)) return "✗";
+  if (/cancelled|stale/.test(state)) return "⊘";
+  if (/in_progress|queued|waiting|pending|requested/.test(state)) return "◷";
+  if (/skipped/.test(state)) return "–";
+  return "•";
+}
+
+const isFailState = (state: string) => /(failure|timed_out|startup_failure|action_required)/.test(state);
+
+function runLine(r: any): string {
+  const st = stateOf(r);
+  return [
+    `${icon(st)} run ${r.databaseId}  ${r.workflowName ?? r.name ?? "?"}  [${st}]`,
+    `    ${r.headBranch ?? "?"} · ${r.event ?? "?"} · ${day(r.createdAt)}  ${r.displayTitle ? `— ${r.displayTitle}` : ""}`.trimEnd(),
+    r.url ? `    ${r.url}` : null,
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+/** Pull distinct Actions run ids out of check/job links so the agent can chain into run_*. */
+function runIdsFrom(links: (string | undefined | null)[]): string[] {
+  const out = new Set<string>();
+  for (const l of links) {
+    const m = /\/actions\/runs\/(\d+)/.exec(String(l ?? ""));
+    if (m) out.add(m[1]);
+  }
+  return [...out];
+}
+
+type RunRef = { id?: string; note?: string; run?: any; err?: string; failure?: { status: GhStatus; message: string } };
+
+/**
+ * Resolve which workflow run to act on: the explicit `number` (id or Actions URL), else the
+ * latest run on the current branch (optionally narrowed by workflow/status). Returning the
+ * resolution note matters for writes — the preview must say WHICH run was picked.
+ */
+async function resolveRunRef(
+  params: GhToolInput,
+  R: string[],
+  cwd: string,
+  branch: string | undefined,
+  signal?: AbortSignal,
+): Promise<RunRef> {
+  const raw = numArg(params.number);
+  if (raw) {
+    if (/^\d+$/.test(raw)) return { id: raw };
+    const m = /\/actions\/runs\/(\d+)/.exec(raw);
+    if (m) return { id: m[1] };
+    return {
+      err: `Could not read a workflow run id from number:"${raw}". Pass the numeric run id (see {"action":"run_list"}) or an Actions run URL.`,
+    };
+  }
+  const args = ["run", "list", ...R, "--limit", "1", "--json", RUN_FIELDS];
+  if (branch) args.push("--branch", branch);
+  if (params.workflow) args.push("--workflow", params.workflow);
+  if (params.status) args.push("--status", params.status);
+  const r = await gh(args, { cwd, signal });
+  if (r.code !== 0) return { failure: classify(r, params.action) };
+  const first = (jsonOut<any[]>(r) ?? [])[0];
+  const scope = [branch ? `branch '${branch}'` : "this repo", params.workflow ? `workflow '${params.workflow}'` : "", params.status ? `status '${params.status}'` : ""]
+    .filter(Boolean)
+    .join(", ");
+  if (!first)
+    return {
+      err: `No workflow runs found for ${scope}. List them with {"action":"run_list"} and pass number:<run id> explicitly.`,
+    };
+  return {
+    id: String(first.databaseId),
+    run: first,
+    note: `resolved as the latest run for ${scope} (${first.workflowName ?? "?"}, ${stateOf(first)})`,
+  };
+}
+
+/** Fetch a run plus its jobs (jobs are only available on `run view`, never on `run list`). */
+async function fetchRun(id: string, R: string[], cwd: string, signal?: AbortSignal) {
+  const r = await gh(["run", "view", id, ...R, "--json", `${RUN_FIELDS},attempt,jobs`], { cwd, signal });
+  return { raw: r, run: r.code === 0 ? jsonOut<any>(r) : null };
+}
+
+/**
+ * Resolve `job` (name or id) to a job databaseId within a run.
+ *
+ * gh's `--job` needs the job's databaseId; the number in an Actions `/jobs/<n>` URL is a
+ * different id and makes the API return 404, so a numeric job is VALIDATED against the run's
+ * real job ids instead of being passed through blindly.
+ */
+function resolveJob(jobs: any[], want: string): { id?: string; name?: string; err?: string } {
+  const list = jobs ?? [];
+  const inventory = list.length
+    ? list.map((j) => `    ${j.databaseId}  ${j.name} [${stateOf(j)}]`).join("\n")
+    : "    (this run reported no jobs)";
+  const w = want.trim().toLowerCase();
+  if (/^\d+$/.test(w)) {
+    const hit = list.find((j) => String(j.databaseId) === w);
+    if (hit) return { id: String(hit.databaseId), name: hit.name };
+    return {
+      err: `job ${want} is not a job of this run. (The number in an Actions "/jobs/<n>" URL is not the job id.) Jobs in this run:\n${inventory}`,
+    };
+  }
+  const exact = list.filter((j) => String(j.name).toLowerCase() === w);
+  const partial = exact.length ? exact : list.filter((j) => String(j.name).toLowerCase().includes(w));
+  if (partial.length === 1) return { id: String(partial[0].databaseId), name: partial[0].name };
+  if (!partial.length) return { err: `No job named "${want}" in this run. Jobs:\n${inventory}` };
+  return {
+    err: `"${want}" matches ${partial.length} jobs — pass the exact name or the job id:\n${partial
+      .map((j) => `    ${j.databaseId}  ${j.name} [${stateOf(j)}]`)
+      .join("\n")}`,
+  };
+}
+
 /* ------------------------------------------------------- write previews */
 
 type WritePlan = {
@@ -583,8 +772,11 @@ export default function (pi: ExtensionAPI) {
     executionMode: "sequential",
     description: `GitHub PRs/issues via the \`gh\` CLI. Title/body are plain parameters (passed over argv+stdin, never a shell string), and every mutation is preview-first.
 
-Read: auth_status, repo_info, pr_list (author/state/base/search), pr_view (number, or the current branch's PR: state, base<-head, checks, reviews, body), pr_diff (per-file stat; patch:true for the raw patch), pr_checks, search_prs, search_issues, issue_view.
-Write: pr_create, pr_edit, pr_comment, pr_ready, pr_merge, issue_comment.
+Read PRs/issues: auth_status, repo_info, pr_list (author/state/base/search), pr_view (number, or the current branch's PR: state, base<-head, checks, reviews, body), pr_diff (per-file stat; patch:true for the raw patch), pr_checks, search_prs, search_issues, issue_view.
+Read CI (Actions): run_list (workflow/branch/status/event filters), run_view (a run's jobs + failed steps + job ids), run_log (failed-step logs, or one job's full log via job:"<name|id>"), workflow_list.
+Write: pr_create, pr_edit, pr_comment, pr_ready, pr_merge, issue_comment, run_rerun (failed_only / job), run_cancel, workflow_run.
+
+CI triage loop: pr_checks (failing run ids) -> run_view (which job/step) -> run_log (why) -> run_rerun {failed_only:true} (retry only what failed). run_* accept the run id in \`number\`, or omit it for the latest run on the current branch.
 
 Writes never auto-run, but you do NOT ask for permission in prose first: just call the action. In an interactive session the user gets a confirm dialog with the resolved payload and decides there — one decision, no extra turn. In a non-interactive session the call instead returns the payload + a one-time confirm_token bound to a hash of it; relay that and repeat the identical call with confirm_token once the user approves. Any change to the payload (even one body character) voids the token.
 
@@ -603,6 +795,9 @@ Every result ends with "gh_status:" — ok | preview_pending_approval | refused_
       "When a gh result ends with gh_status: no_remote, the working directory has no GitHub remote: pass repo:\"OWNER/REPO\" explicitly instead of retrying the same call.",
       "For gh pr_merge, state the merge method and that merging is irreversible when asking the user to approve.",
       "Prefer gh pr_diff without patch:true (per-file added/removed stat) to judge PR size, and only pass patch:true when the actual code changes are needed — the patch is capped and can be large.",
+      "For CI failures use the gh tool, not the Actions web UI or bash `gh run`: pr_checks (or run_list) gives the failing run id, run_view shows which job/step failed plus job ids, and run_log returns the failing log tail (add job:\"<name>\" to read one job's full log). Omit `number` on run_* to target the latest run of the current branch.",
+      "To retry CI, prefer gh run_rerun with failed_only:true (reruns only the failed jobs) or job:\"<name or id>\" for a single job, instead of rerunning everything; it is preview-gated like other writes because a rerun spends CI minutes and can re-trigger deploys. Never pass a number from an Actions `/jobs/<n>` URL as `job` — pass the job name and let the tool resolve the real id.",
+      "gh run_cancel aborts an in-progress run and workflow_run dispatches a new one (workflow_dispatch, with ref + inputs) — both are real CI mutations, so call them once and let the tool's approval step handle the confirmation.",
       "A gh preview caps the DISPLAYED body at 4000 chars; the body actually sent to GitHub is never truncated, so a \"truncated at 4000 of N chars\" note in a preview is a display cap only and is not a reason to shorten the body.",
       "Pass body_limit:0 to gh pr_view/issue_view when the question is only about state, branches, checks or reviews — PR templates are long and the body is usually the biggest part of the output.",
       "Running a mutating `gh` command (gh pr create/merge/edit/comment/ready, gh issue comment, gh api -X POST/PATCH/DELETE, ...) through bash is blocked while the gh tool is active, because it would skip the payload preview. If a bash gh command is blocked, use the corresponding gh action; if there is no matching action, tell the user the command instead of looking for another way to run it.",
@@ -785,16 +980,26 @@ Every result ends with "gh_status:" — ok | preview_pending_approval | refused_
             if (!list.length) return fin(`No checks reported for PR ${n ? `#${n}` : "(current branch)"}.`);
             const byBucket = new Map<string, number>();
             for (const c of list) byBucket.set(c.bucket ?? "?", (byBucket.get(c.bucket ?? "?") ?? 0) + 1);
+            const failing = list.filter((c) => c.bucket === "fail");
             const notable = list
               .filter((c) => c.bucket !== "pass" && c.bucket !== "skipping")
               .slice(0, 25)
               .map((c) => `  ${c.bucket === "fail" ? "✗" : "•"} ${c.name} [${c.bucket}/${c.state}]${c.link ? ` ${c.link}` : ""}`);
+            const failedRunIds = runIdsFrom(failing.map((c) => c.link));
             return fin(
               [
                 `Checks for PR ${n ? `#${n}` : "(current branch)"}: ${list.length} total — ${[...byBucket.entries()]
                   .map(([k, v]) => `${k}=${v}`)
                   .join(" ")}${r.code === 8 ? " (some still pending)" : ""}`,
                 ...(notable.length ? ["Not passing:", ...notable] : ["All checks passing or skipped."]),
+                ...(failedRunIds.length
+                  ? [
+                      "",
+                      `Failing Actions run id(s): ${failedRunIds.join(", ")}`,
+                      `  logs:  {"action":"run_log","number":${failedRunIds[0]}}`,
+                      `  rerun: {"action":"run_rerun","number":${failedRunIds[0]},"failed_only":true}`,
+                    ]
+                  : []),
               ].join("\n"),
             );
           }
@@ -860,6 +1065,170 @@ Every result ends with "gh_status:" — ok | preview_pending_approval | refused_
                 ...(bodyLimit === 0
                   ? ["Body:  (omitted: body_limit=0)"]
                   : ["Body:", i.body?.trim() ? cap(i.body, bodyLimit, "body; raise body_limit for more") : "(empty)"]),
+              ].join("\n"),
+            );
+          }
+
+          /* ------------------------------------------------------ CI reads */
+
+          case "run_list": {
+            if (params.status && !RUN_STATUSES.includes(params.status.toLowerCase() as any))
+              return bad(`status must be one of: ${RUN_STATUSES.join(" | ")} (got '${params.status}').`);
+            const args = ["run", "list", ...R, "--limit", String(limit), "--json", RUN_FIELDS];
+            if (params.workflow) args.push("--workflow", params.workflow);
+            if (params.branch) args.push("--branch", params.branch);
+            if (params.event) args.push("--event", params.event);
+            if (params.status) args.push("--status", params.status.toLowerCase());
+            if (params.author) {
+              let user = params.author;
+              if (user === "@me") {
+                const who = await gh(["api", "user", "--jq", ".login"], { cwd, signal });
+                if (who.code === 0 && who.stdout.trim()) user = who.stdout.trim();
+              }
+              args.push("--user", user);
+            }
+            const r = await gh(args, { cwd, signal });
+            if (r.code !== 0) {
+              const c = classify(r, "run_list");
+              return fin(c.message, c.status);
+            }
+            const runs = jsonOut<any[]>(r) ?? [];
+            const scope = [
+              params.workflow ? `workflow=${params.workflow}` : "",
+              params.branch ? `branch=${params.branch}` : "",
+              params.status ? `status=${params.status}` : "",
+              params.event ? `event=${params.event}` : "",
+            ]
+              .filter(Boolean)
+              .join(" ");
+            if (!runs.length) return fin(`No workflow runs matched${scope ? ` (${scope})` : ""}.`);
+            const firstFail = runs.find((x) => isFailState(stateOf(x)));
+            return fin(
+              [
+                `Workflow runs (${runs.length} shown${scope ? `, ${scope}` : ""}):`,
+                "",
+                runs.map(runLine).join("\n\n"),
+                ...(firstFail
+                  ? ["", `Inspect a failure: {"action":"run_view","number":${firstFail.databaseId}} — then run_log / run_rerun.`]
+                  : []),
+              ].join("\n"),
+            );
+          }
+
+          case "run_view": {
+            const ref = await resolveRunRef(params, R, cwd, params.branch ?? undefined, signal);
+            if (ref.failure) return fin(ref.failure.message, ref.failure.status);
+            if (!ref.id) return bad(ref.err ?? "Could not resolve a workflow run.");
+            const { raw, run } = await fetchRun(ref.id, R, cwd, signal);
+            if (raw.code !== 0 || !run) {
+              const c = classify(raw, "run_view");
+              return fin(c.message, c.status);
+            }
+            const jobs = (run.jobs ?? []) as any[];
+            const jobLines = jobs.slice(0, 50).flatMap((j) => {
+              const js = stateOf(j);
+              const failedSteps = (j.steps ?? [])
+                .filter((s: any) => isFailState(stateOf(s)))
+                .slice(0, 5)
+                .map((s: any) => `      failed step #${s.number}: ${s.name} [${stateOf(s)}]`);
+              return [
+                `  ${icon(js)} ${j.name}  [${js}]  job id ${j.databaseId}`,
+                ...failedSteps,
+                ...(isFailState(js) ? [`      log: {"action":"run_log","number":${run.databaseId},"job":${j.databaseId}}`] : []),
+              ];
+            });
+            const failedJobs = jobs.filter((j) => isFailState(stateOf(j)));
+            const st = stateOf(run);
+            return fin(
+              [
+                `Run:      ${run.databaseId}  ${run.workflowName ?? "?"}${run.attempt && run.attempt > 1 ? `  (attempt ${run.attempt})` : ""}${
+                  ref.note ? `   [${ref.note}]` : ""
+                }`,
+                `Title:    ${run.displayTitle ?? "?"}`,
+                `URL:      ${run.url ?? "?"}`,
+                `Branch:   ${run.headBranch ?? "?"} @ ${String(run.headSha ?? "").slice(0, 8)}   event: ${run.event ?? "?"}`,
+                `State:    ${icon(st)} ${run.status ?? "?"}${run.conclusion ? ` / ${run.conclusion}` : ""}   created ${day(run.createdAt)}, updated ${day(run.updatedAt)}`,
+                `Jobs:     ${jobs.length}${failedJobs.length ? `  (${failedJobs.length} failing)` : ""}`,
+                ...jobLines,
+                jobs.length > 50 ? `  ... ${jobs.length - 50} more jobs` : "",
+                "",
+                ...(failedJobs.length
+                  ? [
+                      `Failing logs: {"action":"run_log","number":${run.databaseId}}   (all failed steps of the run)`,
+                      `Rerun failed: {"action":"run_rerun","number":${run.databaseId},"failed_only":true}`,
+                    ]
+                  : st === "in_progress" || st === "queued"
+                    ? ["Run is not finished yet — logs become available as jobs complete."]
+                    : []),
+              ]
+                .filter((l) => l !== "")
+                .join("\n"),
+            );
+          }
+
+          case "run_log": {
+            const ref = await resolveRunRef(params, R, cwd, params.branch ?? undefined, signal);
+            if (ref.failure) return fin(ref.failure.message, ref.failure.status);
+            if (!ref.id) return bad(ref.err ?? "Could not resolve a workflow run.");
+            let args = ["run", "view", ref.id, ...R, "--log-failed"];
+            let what = `failed steps of run ${ref.id}`;
+            if (params.job !== undefined && `${params.job}`.trim() !== "") {
+              const { raw, run } = await fetchRun(ref.id, R, cwd, signal);
+              if (raw.code !== 0 || !run) {
+                const c = classify(raw, "run_log");
+                return fin(c.message, c.status);
+              }
+              const jr = resolveJob(run.jobs ?? [], `${params.job}`);
+              if (!jr.id) return bad(jr.err ?? "Could not resolve the job.");
+              // `gh run view --job <id> --log` takes NO positional run id.
+              args = ["run", "view", ...R, "--job", jr.id, "--log"];
+              what = `full log of job "${jr.name}" (${jr.id}) in run ${ref.id}`;
+            }
+            const r = await gh(args, { cwd, signal, timeout: 120_000 });
+            const blob = `${r.stdout}`.trim();
+            if (r.code !== 0 && !blob) {
+              const joined = `${r.stderr}${r.stdout}`.toLowerCase();
+              if (/still in progress|has not completed|no logs found/.test(joined))
+                return fin(
+                  `No logs yet for run ${ref.id}: the run (or the requested job) has not completed — GitHub only serves logs for finished jobs.\nCheck progress with {"action":"run_view","number":${ref.id}} and retry when it is done.`,
+                );
+              const c = classify(r, "run_log");
+              return fin(c.message, c.status);
+            }
+            if (!blob)
+              return fin(
+                `No failing-step logs for run ${ref.id} (nothing failed, or GitHub expired the logs — they are retained ~90 days).\nSee {"action":"run_view","number":${ref.id}} for per-job state.`,
+              );
+            return fin(
+              [
+                `Logs — ${what}${ref.note ? `  [${ref.note}]` : ""}:`,
+                "----------------------------------------",
+                capTail(blob, LOG_CHARS, 'log tail; narrow with job:"<name>" for one job'),
+                "----------------------------------------",
+                ...(params.job === undefined
+                  ? ['Narrow to one job with job:"<job name or id>" (names come from run_view).']
+                  : []),
+              ].join("\n"),
+            );
+          }
+
+          case "workflow_list": {
+            const r = await gh(["workflow", "list", ...R, "--limit", String(Math.max(limit, 30)), "--all", "--json", "id,name,path,state"], {
+              cwd,
+              signal,
+            });
+            if (r.code !== 0) {
+              const c = classify(r, "workflow_list");
+              return fin(c.message, c.status);
+            }
+            const wfs = jsonOut<any[]>(r) ?? [];
+            if (!wfs.length) return fin("No workflows found in this repository.");
+            return fin(
+              [
+                `Workflows (${wfs.length}):`,
+                ...wfs.map((w) => `  ${w.state === "active" ? "✓" : "–"} ${w.name}  [${w.state}]  ${w.path}  id ${w.id}`),
+                "",
+                'Runs of one workflow: {"action":"run_list","workflow":"<name or file.yml>"}',
               ].join("\n"),
             );
           }
@@ -1032,6 +1401,107 @@ Every result ends with "gh_status:" — ok | preview_pending_approval | refused_
             break;
           }
 
+          /* ----------------------------------------------------- CI writes */
+
+          case "run_rerun":
+          case "run_cancel": {
+            const ref = await resolveRunRef(params, R, cwd, params.branch ?? rc.currentBranch, signal);
+            if (ref.failure) return fin(ref.failure.message, ref.failure.status);
+            if (!ref.id) return bad(ref.err ?? "Could not resolve a workflow run.");
+            const { raw, run } = await fetchRun(ref.id, R, cwd, signal);
+            if (raw.code !== 0 || !run) {
+              const c = classify(raw, params.action);
+              return fin(c.message, c.status);
+            }
+            const jobs = (run.jobs ?? []) as any[];
+            const failedJobs = jobs.filter((j) => isFailState(stateOf(j)));
+            const runHead = [
+              `Repo:      ${rc.nameWithOwner ?? "(current dir)"}`,
+              `Run:       ${run.databaseId}  ${run.workflowName ?? "?"}${run.attempt && run.attempt > 1 ? ` (attempt ${run.attempt})` : ""} — ${run.displayTitle ?? ""}`,
+              `URL:       ${run.url ?? "?"}`,
+              `Branch:    ${run.headBranch ?? "?"} @ ${String(run.headSha ?? "").slice(0, 8)}   event: ${run.event ?? "?"}`,
+              `State:     ${run.status ?? "?"}${run.conclusion ? ` / ${run.conclusion}` : ""}   (${jobs.length} jobs, ${failedJobs.length} failing)`,
+              ...(ref.note ? [`Resolved:  no number was given — ${ref.note}`] : []),
+            ];
+
+            if (params.action === "run_cancel") {
+              if (String(run.status).toLowerCase() === "completed")
+                return bad(
+                  `Run ${run.databaseId} already finished (${stateOf(run)}), so there is nothing to cancel. Nothing was sent.`,
+                );
+              plan = {
+                payload: { repo: rc.nameWithOwner, runId: String(run.databaseId), workflow: run.workflowName },
+                args: ["run", "cancel", String(run.databaseId), ...R],
+                previewLines: [...runHead, "Action:    CANCEL this in-progress run (all queued/running jobs are stopped)"],
+                warning:
+                  "This CANCELS a running CI job. Work in progress is aborted mid-step, which can leave a deploy/publish half-finished, and the PR's checks turn red.",
+                successNote: "Cancel requested",
+              };
+              break;
+            }
+
+            const jobSel =
+              params.job !== undefined && `${params.job}`.trim() !== "" ? resolveJob(jobs, `${params.job}`) : null;
+            if (jobSel && !jobSel.id) return bad(jobSel.err ?? "Could not resolve the job.");
+            if (!jobSel && params.failed_only && !failedJobs.length)
+              return bad(
+                `failed_only:true was requested but run ${run.databaseId} has no failed jobs (state: ${stateOf(run)}). Nothing was sent. Drop failed_only to rerun the whole run, or pick another run with {"action":"run_list","status":"failure"}.`,
+              );
+            const scope = jobSel
+              ? `ONE job: "${jobSel.name}" (id ${jobSel.id}) plus the jobs it depends on`
+              : params.failed_only
+                ? `ONLY the failed jobs (${failedJobs.map((j) => j.name).join(", ")})`
+                : `ALL ${jobs.length} jobs of the run`;
+            plan = {
+              payload: {
+                repo: rc.nameWithOwner,
+                runId: String(run.databaseId),
+                workflow: run.workflowName,
+                failedOnly: !!params.failed_only && !jobSel,
+                job: jobSel?.id ?? null,
+              },
+              // `gh run rerun --job <id>` takes no positional run id.
+              args: jobSel
+                ? ["run", "rerun", ...R, "--job", jobSel.id!]
+                : ["run", "rerun", String(run.databaseId), ...R, ...(params.failed_only ? ["--failed"] : [])],
+              previewLines: [...runHead, `Rerun:     ${scope}`],
+              warning:
+                "This RE-RUNS GitHub Actions on the repo: it spends CI minutes, replaces the existing check results, and re-executes everything those jobs do (including any deploy/publish/notification steps).",
+              successNote: "Rerun requested",
+            };
+            break;
+          }
+
+          case "workflow_run": {
+            if (!params.workflow?.trim())
+              return bad(
+                'workflow is required for action=workflow_run (name, file name like "ci.yml", or id — list them with {"action":"workflow_list"}).',
+              );
+            const wfRef = params.ref?.trim() || rc.currentBranch || rc.defaultBranch;
+            if (!wfRef)
+              return bad('Could not determine a ref to run the workflow on (detached HEAD?). Pass ref:"main" explicitly.');
+            const inputs = Object.entries(params.inputs ?? {}).map(([k, v]) => [k, String(v)] as [string, string]);
+            if (inputs.length > 25)
+              return bad(`workflow_dispatch supports at most 25 inputs; got ${inputs.length}.`);
+            const wfArgs = ["workflow", "run", params.workflow.trim(), ...R, "--ref", wfRef];
+            for (const [k, v] of inputs) wfArgs.push("-f", `${k}=${v}`);
+            plan = {
+              payload: { repo: rc.nameWithOwner, workflow: params.workflow.trim(), ref: wfRef, inputs: Object.fromEntries(inputs) },
+              args: wfArgs,
+              previewLines: [
+                `Repo:      ${rc.nameWithOwner ?? "(current dir)"}`,
+                `Workflow:  ${params.workflow.trim()}`,
+                `Ref:       ${wfRef}${params.ref ? "" : "   (current branch / repo default)"}`,
+                `Inputs:    ${inputs.length ? "" : "(none)"}`,
+                ...inputs.map(([k, v]) => `    ${k} = ${v.length > 200 ? `${v.slice(0, 200)}…` : v}`),
+              ],
+              warning:
+                "This DISPATCHES a real workflow run on GitHub (workflow_dispatch). It executes CI immediately and can build, deploy, publish or notify — check the ref and inputs carefully.",
+              successNote: "Workflow dispatched",
+            };
+            break;
+          }
+
           default:
             return bad(`Unhandled write action '${params.action}'.`);
         }
@@ -1129,6 +1599,9 @@ Every result ends with "gh_status:" — ok | preview_pending_approval | refused_
       const bits = [
         args.repo,
         args.number !== undefined ? `#${args.number}` : undefined,
+        args.workflow,
+        args.job !== undefined ? `job ${args.job}` : undefined,
+        args.failed_only ? "failed-only" : undefined,
         args.query && `"${args.query}"`,
         args.base && args.head ? `${args.base}<-${args.head}` : args.base,
         args.title && `"${args.title.slice(0, 60)}"`,
