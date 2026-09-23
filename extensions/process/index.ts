@@ -30,6 +30,16 @@ import { existsSync } from "node:fs";
 import * as fsp from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import {
+  inspectCommand,
+  worstRisk,
+  renderBlock as renderGuardBlock,
+  renderWarn as renderGuardWarn,
+  readMode as readGuardMode,
+  isHard,
+  type Finding,
+  type GuardMode,
+} from "./guard.ts";
 
 /** Max chars of log text returned by any single call (tail/poll/wait). */
 const MAX_OUT_CHARS = 12_000;
@@ -49,10 +59,63 @@ const DEFAULT_GRACE_SEC = 3;
 const DEFAULT_WAIT_SEC = 60;
 /** Hard cap for action=wait (a tool call should never hang a session forever). */
 const MAX_WAIT_SEC = 900;
+/** Default horizon for a background watcher (action=watch / non-blocking wait). */
+const DEFAULT_WATCH_SEC = 3600;
+/** Hard cap for a background watcher. */
+const MAX_WATCH_SEC = 24 * 3600;
+/** Never keep more than this many watchers armed at once. */
+const MAX_WATCHERS = 16;
 /** Entries older than this (and finished) are pruned by action=clean. */
 const PRUNE_AGE_MS = 7 * 24 * 3600 * 1000;
 /** Max rows returned by action=list. */
 const LIST_LIMIT = 40;
+
+type GuardEntry = { at: number; verdict: "block" | "warn" | "allow-dictated"; rules: string; command: string };
+
+const normCmd = (s: string) => s.replace(/\s+/g, " ").trim();
+
+/** In mode=warn a would-be block is still executed, but loudly reported. */
+function renderGuardBlockAsWarn(findings: Finding[]): string {
+  return findings
+    .map(
+      (f) =>
+        `${f.risk === "block" ? "\u26d4 [process-guard] NOT BLOCKED (mode=warn)" : "\u26a0 [process-guard]"} ${f.rule}: ${f.why}`,
+    )
+    .join("\n");
+}
+
+/**
+ * The single human-controlled bypass: the user typed this exact command in a
+ * recent message. The agent cannot manufacture this — only the human can.
+ */
+function userDictated(command: string, ctx: ExtensionContext): boolean {
+  try {
+    const needle = normCmd(command);
+    if (needle.length < 8) return false;
+    const sm = ctx.sessionManager as
+      | { getBranch?: () => unknown[]; getEntries?: () => unknown[] }
+      | undefined;
+    const entries = (sm?.getBranch?.() ?? sm?.getEntries?.() ?? []) as {
+      message?: { role?: string; content?: unknown };
+    }[];
+    let checked = 0;
+    for (let i = entries.length - 1; i >= 0 && checked < 12; i--) {
+      const msg = entries[i]?.message;
+      if (!msg || msg.role !== "user") continue;
+      checked++;
+      const text =
+        typeof msg.content === "string"
+          ? msg.content
+          : Array.isArray(msg.content)
+            ? msg.content.map((c: { type?: string; text?: string }) => (c?.type === "text" ? (c.text ?? "") : "")).join("\n")
+            : "";
+      if (text && normCmd(text).includes(needle)) return true;
+    }
+  } catch {
+    /* if session state is unreadable, treat as NOT dictated (fail closed here) */
+  }
+  return false;
+}
 
 type Status = "running" | "exited" | "killed";
 /** How the exit was observed — machine-readable confidence marker. */
@@ -408,7 +471,7 @@ function buildMatcher(pattern: string): { test: (line: string) => boolean; kind:
   }
 }
 
-const actionEnum = ["start", "list", "poll", "tail", "wait", "kill", "clean"] as const;
+const actionEnum = ["start", "list", "poll", "tail", "wait", "watch", "unwatch", "kill", "clean"] as const;
 
 const schema = Type.Object({
   action: Type.Union(
@@ -416,7 +479,8 @@ const schema = Type.Object({
     {
       description:
         "start=spawn detached background process (returns immediately with an id); poll=status + only the NEW output since the last poll; " +
-        "tail=last N log lines (optionally grep-filtered); wait=block until exit or timeoutSec (replaces `sleep N; kill -9`); " +
+        "tail=last N log lines (optionally grep-filtered); wait=NON-BLOCKING by default (arms a watcher and returns at once; you are woken with the result when the job exits) " +
+        "\u2014 pass block:true to hold the tool call instead; watch=explicitly arm that watcher; unwatch=disarm it; " +
         "kill=SIGTERM then SIGKILL the whole process group; list=registry of ids; clean=drop finished entries and their logs.",
     },
   ),
@@ -437,7 +501,13 @@ const schema = Type.Object({
   ),
   timeoutSec: Type.Optional(
     Type.Number({
-      description: `For action=wait: max seconds to block (default ${DEFAULT_WAIT_SEC}, max ${MAX_WAIT_SEC}). For action=kill: seconds to wait after SIGTERM before SIGKILL (default ${DEFAULT_GRACE_SEC}).`,
+      description: `For action=wait with block:true: max seconds to block (default ${DEFAULT_WAIT_SEC}, max ${MAX_WAIT_SEC}). For action=wait/watch in the default non-blocking mode: how long the watcher stays armed before it reports "still running" (default ${DEFAULT_WATCH_SEC}, max ${MAX_WATCH_SEC}). For action=kill: seconds to wait after SIGTERM before SIGKILL (default ${DEFAULT_GRACE_SEC}).`,
+    }),
+  ),
+  block: Type.Optional(
+    Type.Boolean({
+      description:
+        "For action=wait: hold the tool call open until the process exits (the old blocking behaviour). Default false \u2014 wait returns immediately and wakes you when the job finishes, so the user can keep talking to you meanwhile. Only set true when nothing else can proceed without the result AND the session is non-interactive.",
     }),
   ),
   grepPattern: Type.Optional(
@@ -453,12 +523,191 @@ const schema = Type.Object({
 type Params = Static<typeof schema>;
 
 export default function (pi: ExtensionAPI) {
+  // Guard state is per extension instance (not module-global): an explicit
+  // `/procguard <mode>` beats PI_PROCESS_GUARD, and nothing leaks between
+  // sessions or test harnesses.
+  const guardLog: GuardEntry[] = [];
+  const guardStats = { seen: 0, blocked: 0, warned: 0, allowed: 0, dictated: 0 };
+  let guardModeOverride: GuardMode | null = null;
+  const guardMode = (): GuardMode => guardModeOverride ?? readGuardMode();
+
+  // ---- background watchers -------------------------------------------------
+  // A watcher is what makes `wait` non-blocking: instead of holding the tool
+  // call (which freezes the whole chat until the job exits), it polls the
+  // registry off to the side and injects the outcome back into the session with
+  // pi.sendMessage({deliverAs:"followUp", triggerTurn:true}) \u2014 so the user keeps
+  // talking to the agent, and the agent is woken up to finish the job's story.
+  type Watcher = { id: string; armedAt: number; deadline: number; lines: number; timer?: ReturnType<typeof setTimeout>; done: boolean };
+  const watchers = new Map<string, Watcher>();
+
+  const clearWatcher = (id: string): boolean => {
+    const w = watchers.get(id);
+    if (!w) return false;
+    w.done = true;
+    if (w.timer) {
+      clearTimeout(w.timer);
+      timers.delete(w.timer);
+    }
+    watchers.delete(id);
+    return true;
+  };
+
+  /** Can we deliver an async wake-up in this run mode? */
+  const canNotify = (ctx: ExtensionContext): boolean => {
+    try {
+      if (typeof (pi as { sendMessage?: unknown }).sendMessage !== "function") return false;
+      // print/json runs have no human in the loop and end at the last turn:
+      // a deferred wake-up there would simply be lost, so wait must block.
+      return ctx.mode === "tui" || ctx.mode === "rpc";
+    } catch {
+      return false;
+    }
+  };
+
+  const notify = (content: string, details: Record<string, unknown>) => {
+    try {
+      pi.sendMessage(
+        { customType: "process-watch", content, display: true, details },
+        // followUp: never cut into a turn that is mid-tool-call; triggerTurn:
+        // wake the agent up when it is idle so the job actually gets finished.
+        { deliverAs: "followUp", triggerTurn: true },
+      );
+    } catch {
+      /* a failed wake-up must never crash the extension */
+    }
+  };
+
+  /** Poll one job off to the side and report once it settles. */
+  function armWatcher(rec: Rec, lines: number, horizonSec: number): Watcher {
+    clearWatcher(rec.id);
+    const w: Watcher = {
+      id: rec.id,
+      armedAt: Date.now(),
+      deadline: Date.now() + horizonSec * 1000,
+      lines,
+      done: false,
+    };
+    watchers.set(rec.id, w);
+
+    const tick = async () => {
+      if (w.done) return;
+      let cur: Rec | null = null;
+      try {
+        const loaded = await loadRec(w.id);
+        cur = loaded ? await resolveStatus(loaded) : null;
+      } catch {
+        cur = null;
+      }
+      if (w.done) return;
+
+      if (!cur) {
+        // the entry was cleaned away underneath us — stop quietly
+        clearWatcher(w.id);
+        return;
+      }
+      const timedOut = Date.now() >= w.deadline;
+      if (cur.status === "running" && !timedOut) {
+        const age = Date.now() - w.armedAt;
+        const next = age < 5_000 ? 250 : age < 60_000 ? 1_000 : age < 600_000 ? 3_000 : 10_000;
+        const t = setTimeout(() => void tick(), Math.min(next, Math.max(50, w.deadline - Date.now())));
+        timers.add(t);
+        w.timer = t;
+        return;
+      }
+
+      clearWatcher(w.id);
+      const size = await logSize(cur);
+      const win = await readWindow(cur.logPath, TAIL_WINDOW_BYTES);
+      const tail =
+        lastLines(win.text, w.lines, win.start > 0) ||
+        (win.missing ? `(log file is MISSING: ${cur.logPath})` : "(log is empty)");
+      // Consuming the output here keeps a later poll incremental.
+      await patchRec(cur.id, { cursor: size });
+
+      const head = timedOut
+        ? `${cur.id} is STILL RUNNING after the ${fmtDur(Date.now() - w.armedAt)} watch window — ${statusLine(cur, size)}`
+        : `${cur.id} ${cur.status === "killed" ? "was KILLED" : "EXITED"} after ${fmtDur((cur.endedAt ?? Date.now()) - cur.startedAt)} — ${statusLine(cur, size)}`;
+      notify(
+        `[process-watch] ${head}\ncmd: ${cur.command.length > 200 ? `${cur.command.slice(0, 200)}\u2026` : cur.command}\n--- last ${w.lines} lines ---\n${capChars(tail)}\n\n` +
+          `This is the background watcher you armed for ${cur.id}; the user was free to keep chatting while it ran. ` +
+          (timedOut
+            ? `The job did not finish: decide explicitly whether to keep watching ({action:"watch",id:"${cur.id}",timeoutSec:N}) or kill it.`
+            : `Continue whatever you were doing with this job: report the outcome, inspect more output ({action:"tail",id:"${cur.id}",lines:N,grepPattern:"\u2026"}), or move on to the next step. ` +
+              `If the user has since asked for something else, finish that first and mention this result briefly.`),
+        {
+          id: cur.id,
+          status: cur.status,
+          outcome: timedOut ? "watch-timeout" : cur.status === "killed" ? "killed" : "exited",
+          exitCode: cur.exitCode ?? null,
+          exitSource: cur.exitSource ?? null,
+          runtimeMs: (cur.endedAt ?? Date.now()) - cur.startedAt,
+          logBytes: size,
+          logPath: cur.logPath,
+        },
+      );
+    };
+
+    const t = setTimeout(() => void tick(), 250);
+    timers.add(t);
+    w.timer = t;
+    return w;
+  }
+
   pi.on("session_shutdown", () => {
+    for (const id of [...watchers.keys()]) clearWatcher(id);
     for (const t of timers) clearTimeout(t);
     timers.clear();
     // Deliberately NOT killing the children: they are detached on purpose so a
     // long build/benchmark survives a pi restart. `process list` re-discovers
     // them from the registry, with stale-pid detection.
+  });
+
+  // The wake-up is a normal LLM-visible message; give it a compact TUI shape so
+  // it reads like a notification rather than a wall of log text.
+  try {
+    pi.registerMessageRenderer("process-watch", (message, options, theme) => {
+      const { expanded, outputPad } = options as { expanded?: boolean; outputPad?: number };
+      const raw = typeof message.content === "string" ? message.content : String(message.content ?? "");
+      const lines = raw.split("\n");
+      const status = (message.details as { outcome?: string } | undefined)?.outcome ?? "";
+      const color = status === "exited" ? "success" : status === "watch-timeout" ? "warning" : "accent";
+      const head = theme.fg(color, lines[0] ?? "");
+      const body = expanded ? lines.slice(1).join("\n") : lines.slice(1, 12).join("\n");
+      const more = !expanded && lines.length > 12 ? theme.fg("dim", `\n\u2026 ${lines.length - 12} more lines`) : "";
+      return new Text(`${head}\n${body}${more}`, outputPad ?? 0, 0);
+    });
+  } catch {
+    /* renderer is cosmetic; never block loading over it */
+  }
+
+  pi.registerCommand("procguard", {
+    description: "process destructive-command guard: show stats/recent verdicts, or set mode (on|warn|off)",
+    handler: async (args, ctx) => {
+      const arg = (args ?? "").trim().toLowerCase();
+      if (arg === "on" || arg === "warn" || arg === "off") {
+        guardModeOverride = arg;
+        ctx.ui.notify(
+          `process-guard mode: ${arg}` +
+            (arg === "off"
+              ? " — destructive commands will run unchecked"
+              : arg === "warn"
+                ? " — nothing is refused, findings are only reported"
+                : " — irreversible commands are refused"),
+          arg === "off" ? "warning" : "info",
+        );
+        return;
+      }
+      const recent = guardLog
+        .slice(-8)
+        .map((e) => `  ${e.verdict.padEnd(14)} ${e.rules || "-"}  ${normCmd(e.command).slice(0, 70)}`)
+        .join("\n");
+      ctx.ui.notify(
+        `process-guard [${guardMode()}] starts seen=${guardStats.seen} blocked=${guardStats.blocked} warned=${guardStats.warned} clean=${guardStats.allowed} user-dictated=${guardStats.dictated}` +
+          (recent ? `\nrecent:\n${recent}` : "") +
+          `\nmodes: /procguard on | warn | off   (env: PI_PROCESS_GUARD)`,
+        "info",
+      );
+    },
   });
 
   pi.registerTool({
@@ -470,32 +719,41 @@ Actions:
   start  {command, cwd?, env?}          spawn detached, stdout+stderr -> a log file, returns a short id IMMEDIATELY (never blocks)
   poll   {id, lines?}                   running/exited + exit code + runtime + ONLY the output that is new since the previous poll
   tail   {id, lines?, grepPattern?}     last N log lines, optionally regex-filtered; also reports matches=N, so it COUNTS occurrences (no extra grep call needed)
-  wait   {id, timeoutSec?, lines?}      block until the process exits OR the timeout elapses; says which happened
+  wait   {id, timeoutSec?, lines?}      NON-BLOCKING: arms a watcher and returns at once; you are woken with the exit status + log tail when the job finishes (block:true = old blocking behaviour)
+  watch  {id, timeoutSec?, lines?}      the same wake-up, stated explicitly
+  unwatch{id?}                          disarm one watcher (or all of them)
   kill   {id, timeoutSec?}              SIGTERM the whole process group, escalate to SIGKILL after timeoutSec, report unreaped orphans
   list   {}                             every known id: status, runtime, log size, command
   clean  {id? | all?}                   forget finished entries and delete their logs (never touches running ones)
 
 Use this instead of bash background-job juggling. Concretely:
   BAD:  (cmd > /tmp/o.log 2>&1 & P=$!; sleep 40; kill -9 $P)
-  GOOD: process {action:"start", command:"cmd"} -> {action:"wait", id:"pXXXX", timeoutSec:40} -> only if it timed out, {action:"kill", id:"pXXXX"}
+  GOOD: process {action:"start", command:"cmd"} -> {action:"wait", id:"pXXXX"} -> end your turn; pi wakes you when it exits
   BAD:  for i in $(seq 1 30); do kill -0 $PID || break; sleep 5; done
-  GOOD: process {action:"wait", id, timeoutSec:150}   (returns the instant it exits — no blind sleeping, no truncated run)
+  GOOD: process {action:"wait", id}   (no blind sleeping, no truncated run, and the chat is not frozen)
 
-wait returns as soon as the process exits, so it is both faster and safer than sleeping a fixed duration and killing. poll is incremental: each call reports only bytes written since the previous poll, so polling a chatty job repeatedly does not re-send output you already read.
+ASYNC WAIT (important): in an interactive session (mode tui/rpc) \`wait\` does NOT hold the tool call open. It arms a background watcher, returns immediately, and the conversation stays live — the user can keep talking to you while the build/benchmark runs. When the job exits (or the watch window expires) a \`[process-watch] …\` message is delivered to you automatically with the exit status and the last N log lines; at that point you resume whatever you were doing with that job (report it, fix the failure, run the next step). So after calling wait: do NOT sleep, do NOT poll in a loop, do NOT call wait again — answer the user or end your turn. Use block:true only when nothing can continue without the result; in mode print/json wait blocks anyway, because a deferred wake-up would be lost there.
+
+poll is incremental: each call reports only bytes written since the previous poll, so polling a chatty job repeatedly does not re-send output you already read.
 
 To count matching lines in a job's log (errors, warnings, test failures), use tail with grepPattern and read matches=N from the header — do not spend a second grep/bash call on the log path. tail scans the last 8MB of the log (last 512KB when no grepPattern); the header states the scanned window, so only fall back to grep on the printed log path when the log is larger than that window and you need an exact whole-file count.
 
-Exit codes are only exact when this pi process observed the exit. If a result says exit=unknown(stale-pid) or exit=unknown(pid-reused), the process was started by an earlier pi process (or its pid was recycled) — treat the exit code as unknown and read the log tail instead of trusting a status.`,
+Exit codes are only exact when this pi process observed the exit. If a result says exit=unknown(stale-pid) or exit=unknown(pid-reused), the process was started by an earlier pi process (or its pid was recycled) — treat the exit code as unknown and read the log tail instead of trusting a status.
+
+SAFETY: action=start is screened by a built-in destructive-command guard BEFORE anything is spawned. It never asks for approval — it either runs the command, runs it with a one-line ⚠ note, or refuses it outright. Refused shapes (non-negotiable, not agent-bypassable): recursive deletion of /, $HOME, the working directory or its ancestors, system paths, .git, or a path whose root is an unresolved $VAR; disk destroyers (mkfs/dd of=/dev/…/diskutil erase/writes to a block device); \`curl|wget … | sh\`; credential exfiltration; fork bombs; chmod/chown -R on protected paths; shutdown/reboot; \`kill -9 -1\`; \`crontab -r\`; force-push over main/master. Recoverable-but-notable commands (git reset --hard, git clean -fx, docker prune --volumes, sudo) run and are annotated. If a command is refused, do NOT rephrase/encode/wrap it to get past the check: use file_ops for deletions, or tell the user, who can run \`/procguard off\`.`,
     promptSnippet:
       "Start/poll/tail/wait/kill background processes (replaces `cmd & sleep N; kill -9`, `tail | grep`, kill/pkill juggling)",
     promptGuidelines: [
       "Use process (action=start) instead of bash with a trailing `&`, `nohup`, or `$!` capture for anything that takes more than a few seconds; then use process action=wait or poll instead of `sleep`.",
-      "Use process action=wait with timeoutSec INSTEAD of `sleep N; kill -9 $PID` — wait returns the moment the process exits, so it neither wastes wall-clock nor truncates a run that needed longer.",
+      "Use process action=wait INSTEAD of `sleep N; kill -9 $PID`. In an interactive session wait is non-blocking: it arms a watcher, returns immediately, and pi wakes you with the exit status and log tail when the job finishes — so after calling it, answer the user or end your turn instead of polling, sleeping or calling wait again. When that `[process-watch]` wake-up arrives, pick the job back up (report the result, fix the failure, continue the plan).",
+      "Pass block:true to process action=wait only when nothing can proceed without the result and the session is non-interactive — blocking freezes the whole chat for the duration of the job. action=unwatch cancels a watcher you no longer care about.",
       "Use process action=poll to check on a running job: it returns only the output added since your previous poll, so repeated polling does not re-send text you already saw.",
       "Use process action=tail with grepPattern to search OR count lines in a background job's log (the header reports matches=N) instead of calling grep/bash on the log file path — one call, and it never loads the whole log.",
       "Use process action=kill instead of `kill -9`/`pkill`: it SIGTERMs then SIGKILLs the entire process group, so nested children (gradle daemons, spawned pi runs, npm subprocesses) die too, and it reports orphans it could not reap.",
       "Do NOT use process for fast, foreground commands (ls, git status, a quick grep, a 2-second script) — plain bash is cheaper there. process pays off when the command is slow, chatty, or needs to be monitored/killed.",
       "If a process result reports exit=unknown(stale-pid) or exit=unknown(pid-reused), the exit code was never observed (started before a pi restart, or the pid was recycled): check the log tail before concluding success or failure.",
+      "process action=start screens the command for destructive shapes and refuses the irreversible ones (rm -rf of /, $HOME, cwd or system paths, mkfs/dd to a device, curl|sh, secret exfiltration, fork bombs, shutdown, force-push to main). It never asks for approval, so a refusal is final: do not retry, re-quote, base64 or wrap the command in `bash -c` — reach for file_ops for deletions, or report it to the user (`/procguard off` is theirs to run, not yours).",
+      "A `⚠ [process-guard] …` line on a start result means the job DID start and the warning is informational (git reset --hard, git clean -fx, docker prune --volumes, sudo without a TTY) — do not restart the job because of it.",
     ],
     parameters: schema,
     async execute(_toolCallId, params: Params, signal, onUpdate, ctx: ExtensionContext) {
@@ -522,6 +780,51 @@ Exit codes are only exact when this pi process observed the exit. If a result sa
             if (!command) return bad("action=start requires 'command'.");
             const cwd = params.cwd || ctx.cwd || process.cwd();
             if (!existsSync(cwd)) return bad(`cwd does not exist: ${cwd}`);
+
+            // ---- destructive-command guard --------------------------------
+            // Runs before anything is spawned. Never asks for approval: it
+            // either refuses (irreversible shapes) or annotates (recoverable
+            // but notable). Fails OPEN on an internal error so a guard bug can
+            // never make `process` unusable.
+            let guardNote = "";
+            let findings: Finding[] = [];
+            const mode = guardMode();
+            if (mode !== "off") {
+              guardStats.seen++;
+              try {
+                findings = inspectCommand(command, { cwd });
+              } catch (e) {
+                findings = [];
+              }
+              const verdict = worstRisk(findings);
+              // The verbatim-user-command bypass covers ordinary destructive
+              // commands (the human owns that risk) but NEVER the machine-wide
+              // ones: wiping a disk or piping the network into a shell needs a
+              // deliberate mode change, not a pasted line.
+              const waivable = !findings.some(isHard);
+              if (verdict === "block" && mode === "on") {
+                if (waivable && userDictated(command, ctx)) {
+                  guardStats.dictated++;
+                  guardLog.push({ at: Date.now(), verdict: "allow-dictated", rules: findings.map((f) => f.rule).join(","), command });
+                  guardNote = `\u26a0 [process-guard] ${findings.map((f) => f.rule).join(", ")}: allowed only because you typed this command verbatim.\n`;
+                } else {
+                  guardStats.blocked++;
+                  guardLog.push({ at: Date.now(), verdict: "block", rules: findings.filter((f) => f.risk === "block").map((f) => f.rule).join(","), command });
+                  if (guardLog.length > 50) guardLog.splice(0, guardLog.length - 50);
+                  return fin(renderGuardBlock(command, findings), {
+                    guard: "blocked",
+                    rules: findings.filter((f) => f.risk === "block").map((f) => f.rule),
+                    findings,
+                  }, true);
+                }
+              } else if (findings.length) {
+                guardStats.warned++;
+                const note = mode === "warn" && verdict === "block" ? renderGuardBlockAsWarn(findings) : renderGuardWarn(findings);
+                if (note) guardNote = `${note}\n`;
+                guardLog.push({ at: Date.now(), verdict: "warn", rules: findings.map((f) => f.rule).join(","), command });
+              } else guardStats.allowed++;
+              if (guardLog.length > 50) guardLog.splice(0, guardLog.length - 50);
+            }
 
             const dir = await ensureDir();
             let id = newId();
@@ -579,8 +882,8 @@ Exit codes are only exact when this pi process observed the exit. If a result sa
             await patchRec(id, { pgid: info.pgid && info.pgid > 1 ? info.pgid : child.pid, psStart: info.lstart });
 
             return fin(
-              `started id=${id} pid=${child.pid} cwd=${cwd}\ncmd: ${command}\nlog: ${logPath}\nNot blocking. Next: {action:"wait",id:"${id}",timeoutSec:N} to block until exit, or {action:"poll",id:"${id}"} for incremental output.`,
-              { id, pid: child.pid, logPath, cwd },
+              `${guardNote}started id=${id} pid=${child.pid} cwd=${cwd}\ncmd: ${command}\nlog: ${logPath}\nNot blocking. Next: {action:"wait",id:"${id}",timeoutSec:N} to block until exit, or {action:"poll",id:"${id}"} for incremental output.`,
+              { id, pid: child.pid, logPath, cwd, ...(findings.length ? { guard: "warn", rules: findings.map((f) => f.rule) } : {}) },
             );
           }
 
@@ -594,8 +897,9 @@ Exit codes are only exact when this pi process observed the exit. If a result sa
               if (rec.status === "running") running++;
               const size = await logSize(rec);
               const own = rec.ownerPid === process.pid ? "" : " (other/prior pi session)";
+              const watched = watchers.has(rec.id) ? " [watched — you will be woken on exit]" : "";
               const cmd = rec.command.length > 90 ? `${rec.command.slice(0, 90)}…` : rec.command;
-              rows.push(`${rec.id}  ${statusLine(rec, size)}${own}\n   cmd: ${cmd}`);
+              rows.push(`${rec.id}  ${statusLine(rec, size)}${own}${watched}\n   cmd: ${cmd}`);
             }
             const more = all.length > LIST_LIMIT ? `\n... ${all.length - LIST_LIMIT} more (use action=clean to prune finished ones)` : "";
             return fin(
@@ -675,10 +979,73 @@ Exit codes are only exact when this pi process observed the exit. If a result sa
             );
           }
 
+          case "unwatch": {
+            if (!params.id) {
+              const n = watchers.size;
+              for (const wid of [...watchers.keys()]) clearWatcher(wid);
+              return fin(`disarmed ${n} watcher(s).`, { disarmed: n });
+            }
+            const had = clearWatcher(params.id);
+            return fin(
+              had ? `watcher for ${params.id} disarmed — you will NOT be woken for it.` : `no watcher was armed for ${params.id}.`,
+              { id: params.id, disarmed: had ? 1 : 0 },
+            );
+          }
+
+          case "watch": {
+            const got = await needId();
+            if (typeof got === "string") return bad(got);
+            const rec = await resolveStatus(got);
+            const size = await logSize(rec);
+            if (rec.status !== "running") {
+              clearWatcher(rec.id);
+              return fin(
+                `${rec.id} is already finished — nothing to watch. ${statusLine(rec, size)}\nRead it now: {action:"poll",id:"${rec.id}"} or {action:"tail",id:"${rec.id}"}.`,
+                { id: rec.id, status: rec.status, exitCode: rec.exitCode ?? null, watching: false },
+              );
+            }
+            if (!canNotify(ctx)) {
+              return fin(
+                `Cannot arm a watcher in mode=${ctx.mode}: an async wake-up would be lost there. Use {action:"wait",id:"${rec.id}",block:true,timeoutSec:N} instead.`,
+                { id: rec.id, watching: false, mode: ctx.mode },
+                true,
+              );
+            }
+            if (!watchers.has(rec.id) && watchers.size >= MAX_WATCHERS)
+              return bad(`too many watchers armed (${watchers.size}/${MAX_WATCHERS}) — disarm one with {action:"unwatch",id:"…"} first.`);
+            const horizon = Math.max(1, Math.min(params.timeoutSec ?? DEFAULT_WATCH_SEC, MAX_WATCH_SEC));
+            armWatcher(rec, linesWanted, horizon);
+            return fin(
+              `watching ${rec.id} in the background (up to ${fmtDur(horizon * 1000)}). ${statusLine(rec, size)}\n` +
+                `NOT blocking: this tool call is already done and the chat stays free — the user can talk to you meanwhile.\n` +
+                `You will be woken with the exit status and the last ${linesWanted} log lines as soon as it finishes; then continue this job.\n` +
+                `Do NOT poll it in a loop. Disarm with {action:"unwatch",id:"${rec.id}"}.`,
+              { id: rec.id, status: rec.status, watching: true, horizonSec: horizon, logPath: rec.logPath },
+            );
+          }
+
           case "wait": {
             const got = await needId();
             if (typeof got === "string") return bad(got);
             let rec = await resolveStatus(got);
+
+            // Default: hand the job to a background watcher and return NOW, so the
+            // conversation is not frozen for the duration of a build.
+            if (rec.status === "running" && params.block !== true && canNotify(ctx)) {
+              if (!watchers.has(rec.id) && watchers.size >= MAX_WATCHERS)
+                return bad(`too many watchers armed (${watchers.size}/${MAX_WATCHERS}) — disarm one with {action:"unwatch",id:"…"} first.`);
+              const horizon = Math.max(1, Math.min(params.timeoutSec ?? DEFAULT_WATCH_SEC, MAX_WATCH_SEC));
+              armWatcher(rec, linesWanted, horizon);
+              const size = await logSize(rec);
+              return fin(
+                `${rec.id} is running — armed a background watcher instead of blocking (up to ${fmtDur(horizon * 1000)}). ${statusLine(rec, size)}\n` +
+                  `The chat is NOT frozen: answer the user, do other work, or end your turn.\n` +
+                  `You will be woken automatically with the exit status and the last ${linesWanted} log lines, and you should then finish what you were doing with this job.\n` +
+                  `Do NOT poll in a loop. {action:"unwatch",id:"${rec.id}"} cancels it; block:true forces the old blocking wait (avoid it in an interactive session).`,
+                { id: rec.id, status: rec.status, outcome: "watching", watching: true, horizonSec: horizon, logBytes: size },
+              );
+            }
+
             const timeoutSec = Math.max(0.1, Math.min(params.timeoutSec ?? DEFAULT_WAIT_SEC, MAX_WAIT_SEC));
             const deadline = Date.now() + timeoutSec * 1000;
             let aborted = false;
@@ -739,6 +1106,7 @@ Exit codes are only exact when this pi process observed the exit. If a result sa
             const got = await needId();
             if (typeof got === "string") return bad(got);
             let rec = await resolveStatus(got);
+            clearWatcher(rec.id); // an explicit kill IS the answer; no wake-up needed
             if (rec.status !== "running") {
               const size = await logSize(rec);
               // The leader is gone, but children it left behind (daemons, orphaned
@@ -934,6 +1302,7 @@ Exit codes are only exact when this pi process observed the exit. If a result sa
                 skipped.push(`${rec.id} (finished recently; all=false only prunes entries older than 7d)`);
                 continue;
               }
+              clearWatcher(rec.id);
               await fsp.rm(rec.logPath, { force: true });
               await fsp.rm(metaPath(dir, rec.id), { force: true });
               recs.delete(rec.id);
