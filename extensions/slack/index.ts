@@ -40,6 +40,10 @@ import { createHash, randomBytes } from "node:crypto";
 const PROFILES = [".zshrc", ".zprofile", ".zshenv", ".bash_profile", ".bashrc", ".profile"];
 const CACHE_DIR = join(homedir(), ".pi", "agent", "cache");
 const CACHE_FILE = join(CACHE_DIR, "slack-names.json");
+/** handle -> id directory used to turn `@name` into a real Slack mention. */
+const DIR_FILE = join(CACHE_DIR, "slack-directory.json");
+/** How long a cached directory is reused before a refresh. */
+const DIR_TTL_MS = 24 * 3600 * 1000;
 const APPROVAL_TTL_MS = 10 * 60 * 1000;
 /** Max messages returned in one rendered block, regardless of what the API returns. */
 const MAX_RENDER = 60;
@@ -264,6 +268,346 @@ async function channelLabel(creds: Creds, id: string, signal?: AbortSignal): Pro
   c.channels[id] = label;
   saveNames();
   return label;
+}
+
+/* ------------------------------------------------------------ mention linking */
+
+/**
+ * Slack only renders a mention when the message text contains the entity markup
+ * `<@U123>` / `<#C123>` / `<!here>`. Plain `@ostap` is posted as literal text and
+ * notifies nobody, which is what made every message this tool sent look like a
+ * mention without being one. So before posting, `@name` and `#channel` written in
+ * ordinary prose are rewritten into that markup.
+ *
+ * Resolution is name -> id via a cached workspace directory (users.list,
+ * usergroups.list, conversations.list). A token that does not resolve, or that is
+ * ambiguous between two people, is left exactly as the caller wrote it and is
+ * reported in the approval preview, so nobody is silently mentioned by accident.
+ */
+type Directory = {
+  at: number;
+  /** normalized handle/display/real name -> user id */
+  handles: Record<string, string>;
+  /** names that match more than one person: never auto-linked */
+  ambiguous: Record<string, true>;
+  /** user group handle -> subteam id */
+  groups: Record<string, string>;
+  /** when the group list was last fetched */
+  groupsAt?: number;
+  /** channel name -> channel id */
+  chans: Record<string, string>;
+  /** when the channel list was last fetched */
+  chansAt?: number;
+  /** user id -> display label, for the preview */
+  labels: Record<string, string>;
+};
+
+let directory: Directory | null = null;
+/** Names already searched for this process: never search the same miss twice. */
+const searched = new Set<string>();
+/** Channels whose membership was already pulled in this process. */
+const membersLearned = new Set<string>();
+
+const normKey = (s: string): string => s.trim().toLowerCase().replace(/^@/, "");
+
+/** `Ostap Bender` also answers to `ostapbender`, `ostap.bender`, `ostap-bender`, `ostap_bender`. */
+function keyVariants(raw: string): string[] {
+  const base = normKey(raw);
+  if (!base) return [];
+  return [...new Set([base, base.replace(/\s+/g, ""), base.replace(/\s+/g, "."), base.replace(/\s+/g, "-"), base.replace(/\s+/g, "_")])];
+}
+
+function addHandle(dir: Directory, key: string, id: string): void {
+  if (!key || !id) return;
+  const prev = dir.handles[key];
+  if (prev && prev !== id) {
+    dir.ambiguous[key] = true;
+    return;
+  }
+  dir.handles[key] = id;
+}
+
+function indexUser(dir: Directory, u: any): void {
+  if (!u?.id || u.deleted) return;
+  const p = u.profile ?? {};
+  dir.labels[u.id] = p.display_name || p.real_name || u.name || u.id;
+  for (const field of [u.name, p.display_name, p.display_name_normalized, p.real_name, p.real_name_normalized])
+    for (const k of keyVariants(String(field ?? ""))) addHandle(dir, k, u.id);
+}
+
+function emptyDir(): Directory {
+  return { at: Date.now(), handles: {}, ambiguous: {}, groups: {}, chans: {}, labels: {} };
+}
+
+function loadDirCache(): Directory | null {
+  try {
+    const d = JSON.parse(readFileSync(DIR_FILE, "utf8")) as Directory;
+    if (!d?.handles) return null;
+    d.ambiguous ??= {};
+    d.groups ??= {};
+    d.chans ??= {};
+    d.labels ??= {};
+    return d;
+  } catch {
+    return null;
+  }
+}
+
+function saveDirCache(d: Directory): void {
+  try {
+    mkdirSync(CACHE_DIR, { recursive: true, mode: 0o700 });
+    writeFileSync(DIR_FILE, JSON.stringify(d), { mode: 0o600 });
+  } catch {
+    /* cache is best-effort */
+  }
+}
+
+/**
+ * Never page the whole member list. On a real workspace `users.list` is 40+ pages of
+ * mostly deactivated accounts (measured: 40k entries, 3.2k active, 22s, still not
+ * finished), so the directory is built lazily from three cheap sources instead:
+ * names already seen while reading Slack, one targeted search per unknown name, and
+ * the membership of the channel being posted to.
+ */
+function getDirectory(): Directory {
+  if (directory) return directory;
+  directory = loadDirCache() ?? emptyDir();
+  // Everyone whose message we have read is already resolved id -> name; invert that.
+  const seen = loadNames().users;
+  for (const [id, name] of Object.entries(seen)) {
+    if (!/^[UW][A-Z0-9]+$/.test(id) || name === id) continue;
+    directory.labels[id] ??= name;
+    for (const k of keyVariants(name)) addHandle(directory, k, id);
+  }
+  return directory;
+}
+
+let authIds: { team?: string; enterprise?: string } | null = null;
+async function getAuthIds(creds: Creds, signal?: AbortSignal): Promise<{ team?: string; enterprise?: string }> {
+  if (authIds) return authIds;
+  const r = await call(creds, "auth.test", {}, signal);
+  authIds = r.ok ? { team: r.team_id, enterprise: r.enterprise_id } : {};
+  return authIds;
+}
+
+/**
+ * The endpoint the Slack client itself uses for @-autocomplete. It is fuzzy, so its
+ * results are only ever used as candidates: the caller still requires an exact
+ * name match before linking anyone.
+ */
+async function searchUsers(creds: Creds, query: string, signal?: AbortSignal): Promise<any[]> {
+  const ids = await getAuthIds(creds, signal);
+  for (const scope of [ids.enterprise, ids.team].filter(Boolean)) {
+    try {
+      const res = await fetch(`https://edgeapi.slack.com/cache/${scope}/users/search`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: `d=${creds.cookie}` },
+        body: JSON.stringify({ token: creds.token, query, count: 30, present_first: true }),
+        signal,
+      });
+      if (!res.ok) continue;
+      const j = await res.json();
+      if (j?.ok && Array.isArray(j.results) && j.results.length) return j.results;
+    } catch (e: any) {
+      if (e?.name === "AbortError") throw e;
+    }
+  }
+  return [];
+}
+
+/** Fallback when search is unavailable: the people actually in the target channel. */
+async function learnChannelMembers(creds: Creds, dir: Directory, channel: string, signal?: AbortSignal): Promise<void> {
+  if (membersLearned.has(channel)) return;
+  membersLearned.add(channel);
+  const ids: string[] = [];
+  let cursor: string | undefined;
+  for (let i = 0; i < 2; i++) {
+    const r = await call(creds, "conversations.members", { channel, limit: 1000, cursor }, signal);
+    if (!r.ok) break;
+    ids.push(...(r.members ?? []));
+    cursor = r.response_metadata?.next_cursor || undefined;
+    if (!cursor) break;
+  }
+  const unknown = ids.filter((id) => !dir.labels[id]).slice(0, 600);
+  for (let i = 0; i < unknown.length; i += 100) {
+    const r = await call(creds, "users.info", { users: unknown.slice(i, i + 100).join(",") }, signal);
+    if (!r.ok) break;
+    for (const u of r.users ?? []) indexUser(dir, u);
+  }
+}
+
+async function ensureGroups(creds: Creds, dir: Directory, signal?: AbortSignal): Promise<void> {
+  if (dir.groupsAt && Date.now() - dir.groupsAt < DIR_TTL_MS) return;
+  const g = await call(creds, "usergroups.list", {}, signal);
+  if (!g.ok) return;
+  for (const ug of g.usergroups ?? []) {
+    if (!ug?.id) continue;
+    for (const k of keyVariants(String(ug.handle ?? ""))) dir.groups[k] ??= ug.id;
+    for (const k of keyVariants(String(ug.name ?? ""))) dir.groups[k] ??= ug.id;
+  }
+  dir.groupsAt = Date.now();
+}
+
+async function ensureChans(creds: Creds, dir: Directory, signal?: AbortSignal): Promise<void> {
+  if (dir.chansAt && Date.now() - dir.chansAt < DIR_TTL_MS) return;
+  let cursor: string | undefined;
+  for (let i = 0; i < 5; i++) {
+    const r = await call(
+      creds,
+      "conversations.list",
+      { limit: 1000, exclude_archived: true, types: "public_channel,private_channel", cursor },
+      signal,
+    );
+    if (!r.ok) return;
+    for (const ch of r.channels ?? []) if (ch?.name && ch.id) dir.chans[ch.name.toLowerCase()] ??= ch.id;
+    cursor = r.response_metadata?.next_cursor || undefined;
+    if (!cursor) break;
+  }
+  dir.chansAt = Date.now();
+}
+
+export type MentionLink = { raw: string; code: string; label: string };
+export type MentionResult = { text: string; linked: MentionLink[]; unresolved: string[] };
+
+/** Broadcast mentions have fixed markup and need no lookup. */
+const BROADCASTS: Record<string, string> = { here: "<!here>", channel: "<!channel>", everyone: "<!everyone>" };
+
+/**
+ * Candidate scanner. The first alternative swallows fenced/inline code and text that
+ * is already entity markup, so `<@U123>` stays untouched and a shell snippet full of
+ * `@` is not rewritten. The lookbehind keeps email addresses out.
+ */
+const MENTION_RE =
+  /(```[\s\S]*?```|`[^`\n]*`|<[^>\n]{1,200}>)|(?<![A-Za-z0-9._%+\-\/])([@#])(?:"([^"\n]{1,80})"|([A-Za-z0-9][A-Za-z0-9._\-]{0,60}))/g;
+
+/** Trailing punctuation is part of the sentence, not of the name: `@ostap,` -> `ostap`. */
+function candidateForms(word: string): string[] {
+  const forms = [word];
+  let w = word;
+  while (/[._\-]$/.test(w)) {
+    w = w.slice(0, -1);
+    if (w) forms.push(w);
+  }
+  return forms;
+}
+
+/** Does this text contain anything worth a directory lookup? */
+function hasMentionCandidates(text: string): boolean {
+  MENTION_RE.lastIndex = 0;
+  for (const m of text.matchAll(MENTION_RE)) if (!m[1]) return true;
+  return false;
+}
+
+function substitute(text: string, dir: Directory): MentionResult {
+  const linked: MentionLink[] = [];
+  const unresolved: string[] = [];
+
+  const out = text.replace(MENTION_RE, (whole, skip, sigil, quoted, bare) => {
+    if (skip) return whole; // code span / fence / existing entity markup
+    const word = (quoted ?? bare ?? "") as string;
+    if (!word) return whole;
+    const raw = `${sigil}${quoted ? `"${word}"` : word}`;
+
+    if (sigil === "@") {
+      for (const form of candidateForms(word)) {
+        const key = normKey(form);
+        const suffix = word.slice(form.length); // punctuation we trimmed off, put back verbatim
+
+        const broadcast = BROADCASTS[key];
+        if (broadcast) {
+          linked.push({ raw: `@${form}`, code: broadcast, label: `everyone in the channel (@${form})` });
+          return `${broadcast}${suffix}`;
+        }
+        if (dir.ambiguous[key]) {
+          unresolved.push(`${raw} (matches more than one person — use the exact handle)`);
+          return whole;
+        }
+        const uid = dir.handles[key];
+        if (uid) {
+          linked.push({ raw: `@${form}`, code: `<@${uid}>`, label: dir.labels[uid] ?? uid });
+          return `<@${uid}>${suffix}`;
+        }
+        const gid = dir.groups[key];
+        if (gid) {
+          linked.push({ raw: `@${form}`, code: `<!subteam^${gid}>`, label: `user group @${form}` });
+          return `<!subteam^${gid}>${suffix}`;
+        }
+      }
+      unresolved.push(raw);
+      return whole;
+    }
+
+    // #channel
+    for (const form of candidateForms(word)) {
+      const cid = dir.chans[normKey(form)];
+      if (cid) {
+        linked.push({ raw: `#${form}`, code: `<#${cid}>`, label: `#${form}` });
+        return `<#${cid}>${word.slice(form.length)}`;
+      }
+    }
+    return whole; // an unknown #word is just text (issue numbers, hashtags)
+  });
+
+  return { text: out, linked, unresolved };
+}
+
+/** The bare names still unresolved after a substitution pass. */
+function pendingNames(res: MentionResult): { users: string[]; chans: string[] } {
+  const users: string[] = [];
+  const chans: string[] = [];
+  for (const u of res.unresolved) {
+    const name = u.replace(/^[@#]/, "").replace(/^"|"$/g, "").replace(/ \(.*\)$/, "");
+    if (!name) continue;
+    (u.startsWith("#") ? chans : users).push(name);
+  }
+  return { users, chans };
+}
+
+/**
+ * Rewrite `@name` / `#channel` into Slack entity markup.
+ *
+ * Costs nothing when the text has no candidates, and nothing when every name is
+ * already known from messages read earlier in the session. Otherwise: one targeted
+ * search per unknown name, then the target channel's membership as a fallback.
+ * Anything still unknown stays literal text and is reported to the approver.
+ */
+async function linkMentions(creds: Creds, text: string, channel?: string, signal?: AbortSignal): Promise<MentionResult> {
+  if (!text || !hasMentionCandidates(text)) return { text, linked: [], unresolved: [] };
+  const dir = getDirectory();
+  let res = substitute(text, dir);
+  if (!res.unresolved.length) return res;
+
+  let learned = false;
+  const { users, chans } = pendingNames(res);
+
+  if (chans.length) {
+    await ensureChans(creds, dir, signal);
+    learned = true;
+  }
+  if (users.length) {
+    await ensureGroups(creds, dir, signal); // @design and friends
+    for (const name of users) {
+      const key = normKey(name);
+      if (searched.has(key)) continue;
+      searched.add(key);
+      for (const u of await searchUsers(creds, name, signal)) indexUser(dir, u);
+    }
+    learned = true;
+    let after = substitute(text, dir);
+    if (after.unresolved.length && channel) {
+      await learnChannelMembers(creds, dir, channel, signal);
+      after = substitute(text, dir);
+    }
+    res = after;
+  } else {
+    res = substitute(text, dir);
+  }
+
+  if (learned) {
+    dir.at = Date.now();
+    saveDirCache(dir);
+  }
+  return res;
 }
 
 /* ---------------------------------------------------------- markup rendering */
@@ -499,6 +843,8 @@ Read actions run immediately:
 
 Write actions (post, reply, react) are preview-first: the call returns the resolved payload plus a one-time confirm_token and sends nothing. In an interactive session the user instead gets a confirm dialog. Posting happens as the user's own identity in a real workspace — never write without explicit approval.
 
+Mentions: write @name, @here, @channel and #channel as ordinary text in the message body. The tool rewrites them into real Slack mention markup (<@U…>, <!here>, <#C…>) before sending, so the person is actually notified — do NOT hand-write that markup and do not ask the user for a Slack user id. Handles, display names, first.last and quoted full names (@"Ana Silva") resolve, as do user groups (@design). A name that does not match exactly, or matches two people, is left as literal text and listed in the preview as NOT linked. Code spans/fences and existing <@U…> markup are never touched.
+
 Example: user pastes a thread link and says "log this as a bug" -> slack {action:"resolve", link:"…"} to read it, then hand the content to the jira tool.`,
     promptSnippet: "Slack: read/search/resolve-thread + preview-gated post/reply/react, acting as the user",
     promptGuidelines: [
@@ -507,6 +853,7 @@ Example: user pastes a thread link and says "log this as a bug" -> slack {action
       "When a slack result ends with slack_status: preview_pending_approval, nothing was posted — relay the preview and wait; do not report success or retry.",
       "When a slack result ends with slack_status: auth_error, tell the user their SLACK_TOKEN/SLACK_COOKIE are expired and must be re-copied from a fresh Slack web session; do not retry.",
       "Prefer slack {action:'search'} or {action:'mentions'} over asking the user to find a message; use Slack search operators (from:, in:, before:, after:) in query.",
+      "To mention someone in a slack post/reply just write @handle (or @\"Full Name\", @here, #channel) in the text \u2014 the tool resolves it to real mention markup before sending. Never write raw <@U\u2026> yourself. Resolution is exact-match only, so if the preview lists a name under 'Not linked' that person will NOT be notified: ask the user for the exact handle instead of posting a mention that is only plain text.",
     ],
     parameters: schema,
     async execute(_id, params: SlackToolInput, signal, _onUpdate, ctx: ExtensionContext) {
@@ -776,21 +1123,41 @@ async function buildWritePlan(
   const chan = await resolveChannel(creds, params.channel, signal);
   if (!chan) return { error: `Channel not found: ${params.channel}` };
 
-  const args: Record<string, string | number | boolean> = { channel: chan, text: params.text };
+  // `@ostap` in prose notifies nobody; Slack needs <@U…>. Rewrite before sending,
+  // and show the result in the preview so the approver sees who gets pinged.
+  const mentions = await linkMentions(creds, params.text, chan, signal);
+  const text = mentions.text;
+
+  const args: Record<string, string | number | boolean> = { channel: chan, text };
   if (params.action === "reply") args.thread_ts = params.ts!;
+
+  const mentionLines: string[] = [];
+  if (mentions.linked.length) {
+    mentionLines.push(
+      `Mentions: ${mentions.linked.length} linked (these people/channels WILL be notified)`,
+      ...mentions.linked.map((m) => `  ${m.raw} -> ${m.code}  ${m.label}`),
+    );
+  }
+  if (mentions.unresolved.length) {
+    mentionLines.push(
+      `Not linked (posted as plain text, nobody notified): ${mentions.unresolved.join(", ")}`,
+    );
+  }
+  if (mentionLines.length) mentionLines.push("");
 
   return {
     method: "chat.postMessage",
     args,
-    payload: { channel: chan, thread_ts: params.action === "reply" ? params.ts : undefined, text: params.text },
+    payload: { channel: chan, thread_ts: params.action === "reply" ? params.ts : undefined, text },
     previewLines: [
       `Channel:  ${params.channel} (${chan})`,
       params.action === "reply" ? `Thread:   reply under ${params.ts}` : `Post:     new message in channel`,
       `Sent as:  YOU (your Slack identity)`,
       "",
-      `Text (${params.text.length} chars):`,
+      ...mentionLines,
+      `Text as it will be sent (${text.length} chars):`,
       "----------------------------------------",
-      params.text.slice(0, 3500),
+      text.slice(0, 3500),
       "----------------------------------------",
     ],
     successNote: params.action === "reply" ? "Reply posted" : "Message posted",
