@@ -183,7 +183,32 @@ env-var configurable, `/sound` command. Registers no tool. See
 
 #### `extensions/subagent`
 Pi's subagent primitive (delegated, isolated-context agent runs). Required
-by `agents/pi-builder.md`. Copied from Pi's own examples.
+by `agents/pi-builder.md`. Based on Pi's own example, extended with a **loop
+mode** for iterate-until-done workflows (implement → review → fix):
+
+```json
+{"loop": {
+  "steps": [
+    {"agent": "writer",   "task": "Implement X. Round {iteration}/{maxIterations}. Reviewer feedback: {previous}"},
+    {"agent": "reviewer", "task": "Review X. Print APPROVED alone on the last line only if everything passes."}
+  ],
+  "until": "^APPROVED$",
+  "maxIterations": 4
+}}
+```
+
+- `steps` (1–8) run in order every iteration; `{previous}` is the output of the
+  step that ran just before (for step 1 of iteration 2+ that is the last step of
+  the previous iteration), plus `{iteration}` / `{maxIterations}`.
+- `until` is a JS regex (multiline flag) tested on the last step's output after
+  each iteration. Anchor it (`^APPROVED$`); an unanchored `APPROVED` also matches
+  `NOT APPROVED`. Patterns that match an empty string (`.*`, `^`) are rejected.
+- `maxIterations` default 3, max 10. Without `until`, runs exactly N iterations.
+- The result's first line is machine-readable: `Loop stop=until-matched` |
+  `max-iterations` | `no-progress` (identical outputs two iterations in a row) |
+  `step-failed` (isError). Only `until-matched` means the condition was met.
+- Tests (no LLM; the test file doubles as a scripted fake `pi`):
+  `node extensions/subagent/tests/loop.test.mjs`
 
 #### `extensions/token-stats`
 Track and report token usage statistics during Pi sessions.

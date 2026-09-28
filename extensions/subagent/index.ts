@@ -27,6 +27,31 @@ const MAX_PARALLEL_TASKS = 8;
 const MAX_CONCURRENCY = 4;
 const COLLAPSED_ITEM_COUNT = 10;
 const PER_TASK_OUTPUT_CAP = 50 * 1024;
+const MAX_LOOP_STEPS = 8;
+const DEFAULT_LOOP_ITERATIONS = 3;
+const MAX_LOOP_ITERATIONS = 10;
+
+/**
+ * Substitute template placeholders. Uses a replacer FUNCTION, never a replacement
+ * string: String.replace interprets `$&`, `` $` ``, `$'` and `$1` inside a string
+ * replacement, so an agent output containing e.g. "costs $& more" would otherwise be
+ * silently mangled into the template text.
+ */
+function fillPlaceholders(template: string, values: Record<string, string>): string {
+	return template.replace(/\{(previous|iteration|maxIterations)\}/g, (match, key: string) =>
+		Object.prototype.hasOwnProperty.call(values, key) ? values[key] : match,
+	);
+}
+
+type LoopStopReason = "until-matched" | "max-iterations" | "no-progress" | "step-failed";
+
+interface LoopInfo {
+	maxIterations: number;
+	iterationsRun: number;
+	stepsPerIteration: number;
+	until?: string;
+	stopReason?: LoopStopReason;
+}
 
 function formatTokens(count: number): string {
 	if (count < 1000) return count.toString();
@@ -151,13 +176,18 @@ interface SingleResult {
 	stopReason?: string;
 	errorMessage?: string;
 	step?: number;
+	/** loop mode only: 1-based iteration this run belongs to */
+	iteration?: number;
 }
 
+type SubagentMode = "single" | "parallel" | "chain" | "loop";
+
 interface SubagentDetails {
-	mode: "single" | "parallel" | "chain";
+	mode: SubagentMode;
 	agentScope: AgentScope;
 	projectAgentsDir: string | null;
 	results: SingleResult[];
+	loop?: LoopInfo;
 }
 
 function getFinalOutput(messages: Message[]): string {
@@ -434,6 +464,37 @@ const ChainItem = Type.Object({
 	cwd: Type.Optional(Type.String({ description: "Working directory for the agent process" })),
 });
 
+const LoopStep = Type.Object({
+	agent: Type.String({ description: "Name of the agent to invoke" }),
+	task: Type.String({
+		description:
+			"Task template. Placeholders: {previous} = output of the step that ran just before (for step 1 of iteration 2+ that is the LAST step of the previous iteration, e.g. reviewer feedback; empty on the very first run), {iteration} = 1-based iteration number, {maxIterations}.",
+	}),
+	cwd: Type.Optional(Type.String({ description: "Working directory for the agent process" })),
+});
+
+const LoopSpec = Type.Object({
+	steps: Type.Array(LoopStep, {
+		minItems: 1,
+		description: `Agents run in order, once per iteration (max ${MAX_LOOP_STEPS} steps). E.g. [writer, reviewer].`,
+	}),
+	until: Type.Optional(
+		Type.String({
+			description:
+				"Stop condition: a JavaScript regex (multiline flag, case-sensitive) tested against the LAST step's output after every iteration. Anchor it to a marker on its own line, e.g. \"^APPROVED$\", and tell that agent to print the marker only when satisfied — an unanchored \"APPROVED\" also matches \"NOT APPROVED\". With until set, the loop also stops early (stop=no-progress) when every step's output is identical to the previous iteration's. Omit until to run exactly maxIterations iterations.",
+		}),
+	),
+	maxIterations: Type.Optional(
+		Type.Integer({
+			minimum: 1,
+			maximum: MAX_LOOP_ITERATIONS,
+			description: `Hard cap on iterations (default ${DEFAULT_LOOP_ITERATIONS}, max ${MAX_LOOP_ITERATIONS}).`,
+		}),
+	),
+}, {
+	description: "Loop mode: repeat the steps (like a chain) until `until` matches the last step's output, or maxIterations is reached.",
+});
+
 const AgentScopeSchema = StringEnum(["user", "project", "both"] as const, {
 	description: 'Which agent directories to use. Default: "user". Use "both" to include project-local agents.',
 	default: "user",
@@ -444,6 +505,7 @@ const SubagentParams = Type.Object({
 	task: Type.Optional(Type.String({ description: "Task to delegate to the agent (for single mode)" })),
 	tasks: Type.Optional(Type.Array(TaskItem, { description: "Array of {agent, task} for parallel execution" })),
 	chain: Type.Optional(Type.Array(ChainItem, { description: "Array of {agent, task} for sequential execution" })),
+	loop: Type.Optional(LoopSpec),
 	agentScope: Type.Optional(AgentScopeSchema),
 	confirmProjectAgents: Type.Optional(
 		Type.Boolean({ description: "Prompt before running project-local agents. Default: true.", default: true }),
@@ -482,10 +544,17 @@ export default function (pi: ExtensionAPI) {
 		executionMode: "sequential",
 		description: [
 			"Delegate tasks to specialized subagents with isolated context.",
-			"Modes: single (agent + task), parallel (tasks array), chain (sequential with {previous} placeholder).",
+			"Modes: single (agent + task), parallel (tasks array), chain (sequential with {previous} placeholder),",
+			"loop (loop.steps repeated until the loop.until regex matches the last step's output, or loop.maxIterations is hit).",
+			'Loop example: {"loop":{"steps":[{"agent":"code_writer","task":"Implement X. Reviewer feedback so far: {previous}"},{"agent":"reviewer","task":"Review the change to X. If it is correct print APPROVED alone on the last line, otherwise list the problems."}],"until":"^APPROVED$","maxIterations":4}}.',
 			`Default agent scope is "user" (from ${path.join(getAgentDir(), "agents")}).`,
 			`To enable project-local agents in ${CONFIG_DIR_NAME}/agents, set agentScope: "both" (or "project").`,
 		].join(" "),
+		promptGuidelines: [
+			"Use subagent loop mode for iterate-until-done work (implement - review - fix until approved, or fix - test until green); use subagent chain when the steps should run exactly once.",
+			"With subagent loop, tell the last step's agent in its task to print a marker on its own line only when satisfied, and pass an anchored until regex such as \"^APPROVED$\"; an unanchored word also matches negations like \"NOT APPROVED\".",
+			"Read the first line of a subagent loop result: only \"stop=until-matched\" means the condition was met; \"max-iterations\" or \"no-progress\" means the work is NOT approved/finished - do not report it as done.",
+		],
 		parameters: SubagentParams,
 
 		async execute(_toolCallId, params, signal, onUpdate, ctx) {
@@ -497,28 +566,62 @@ export default function (pi: ExtensionAPI) {
 			const hasChain = (params.chain?.length ?? 0) > 0;
 			const hasTasks = (params.tasks?.length ?? 0) > 0;
 			const hasSingle = Boolean(params.agent && params.task);
-			const modeCount = Number(hasChain) + Number(hasTasks) + Number(hasSingle);
+			const hasLoop = (params.loop?.steps?.length ?? 0) > 0;
+			const modeCount = Number(hasChain) + Number(hasTasks) + Number(hasSingle) + Number(hasLoop);
+			const requestedMode: SubagentMode = hasLoop ? "loop" : hasChain ? "chain" : hasTasks ? "parallel" : "single";
 
 			const makeDetails =
-				(mode: "single" | "parallel" | "chain") =>
+				(mode: SubagentMode, loop?: LoopInfo) =>
 				(results: SingleResult[]): SubagentDetails => ({
 					mode,
 					agentScope,
 					projectAgentsDir: discovery.projectAgentsDir,
 					results,
+					...(loop ? { loop: { ...loop } } : {}),
 				});
 
 			if (modeCount !== 1) {
-				const available = agents.map((a) => `${a.name} (${a.source})`)
+				const available = agents.map((a) => `${a.name} (${a.source})`).join(", ") || "none";
 				return {
 					content: [
 						{
 							type: "text",
-							text: `Invalid parameters. Provide exactly one mode.\nAvailable agents: ${available}`,
+							text: `Invalid parameters. Provide exactly one mode (agent+task, tasks, chain, or loop).\nAvailable agents: ${available}`,
 						},
 					],
 					details: makeDetails("single")([]),
+					isError: true,
 				};
+			}
+
+			// Validate loop parameters BEFORE any approval dialog or agent run.
+			let loopUntil: RegExp | undefined;
+			let loopMaxIterations = DEFAULT_LOOP_ITERATIONS;
+			if (hasLoop && params.loop) {
+				const loopError = (text: string) => ({
+					content: [{ type: "text" as const, text: `Invalid loop: ${text}` }],
+					details: makeDetails("loop")([]),
+					isError: true,
+				});
+				if (params.loop.steps.length > MAX_LOOP_STEPS)
+					return loopError(`too many steps (${params.loop.steps.length}). Max is ${MAX_LOOP_STEPS}.`);
+				const requested = params.loop.maxIterations ?? DEFAULT_LOOP_ITERATIONS;
+				if (!Number.isInteger(requested) || requested < 1 || requested > MAX_LOOP_ITERATIONS)
+					return loopError(`maxIterations must be an integer 1..${MAX_LOOP_ITERATIONS} (got ${requested}).`);
+				loopMaxIterations = requested;
+				if (params.loop.until !== undefined && params.loop.until.trim() !== "") {
+					try {
+						loopUntil = new RegExp(params.loop.until, "m");
+					} catch (e) {
+						return loopError(`until is not a valid JavaScript regex: ${(e as Error).message}`);
+					}
+					// A pattern that matches "" (e.g. ".*", "^", "x?") matches EVERY output, including an
+					// empty one, so the loop would "succeed" after one pass without checking anything.
+					if (loopUntil.test(""))
+						return loopError(
+							`until /${params.loop.until}/ matches an empty string, so it would stop after the first iteration regardless of the output. Use a concrete marker such as "^APPROVED$".`,
+						);
+				}
 			}
 
 			if ((agentScope === "project" || agentScope === "both") && confirmProjectAgents && ctx.hasUI) {
@@ -526,6 +629,7 @@ export default function (pi: ExtensionAPI) {
 				if (params.chain) for (const step of params.chain) requestedAgentNames.add(step.agent);
 				if (params.tasks) for (const t of params.tasks) requestedAgentNames.add(t.agent);
 				if (params.agent) requestedAgentNames.add(params.agent);
+				if (params.loop) for (const step of params.loop.steps) requestedAgentNames.add(step.agent);
 
 				const projectAgentsRequested = Array.from(requestedAgentNames)
 					.map((name) => agents.find((a) => a.name === name))
@@ -543,9 +647,130 @@ export default function (pi: ExtensionAPI) {
 					if (!ok)
 						return {
 							content: [{ type: "text", text: "Canceled: project-local agents not approved." }],
-							details: makeDetails(hasChain ? "chain" : hasTasks ? "parallel" : "single")([]),
+							details: makeDetails(requestedMode)([]),
 						};
 				}
+			}
+
+			if (hasLoop && params.loop) {
+				const steps = params.loop.steps;
+				const loopInfo: LoopInfo = {
+					maxIterations: loopMaxIterations,
+					iterationsRun: 0,
+					stepsPerIteration: steps.length,
+					until: loopUntil ? params.loop.until : undefined,
+				};
+				const loopDetails = (results: SingleResult[]) => makeDetails("loop", loopInfo)(results);
+				const results: SingleResult[] = [];
+				let previousOutput = "";
+				let previousIterationOutputs: string[] | undefined;
+				let lastIterationOutputs: string[] = [];
+				let stopReason: LoopStopReason = "max-iterations";
+
+				for (let iter = 1; iter <= loopMaxIterations; iter++) {
+					loopInfo.iterationsRun = iter;
+					const iterationOutputs: string[] = [];
+					for (let s = 0; s < steps.length; s++) {
+						const step = steps[s];
+						const task = fillPlaceholders(step.task, {
+							previous: previousOutput,
+							iteration: String(iter),
+							maxIterations: String(loopMaxIterations),
+						});
+						const loopUpdate: OnUpdateCallback | undefined = onUpdate
+							? (partial) => {
+									const current = partial.details?.results[0];
+									if (current) {
+										current.iteration = iter;
+										onUpdate({
+											content: [
+												{
+													type: "text",
+													text: `Loop iteration ${iter}/${loopMaxIterations}, step ${s + 1}/${steps.length} (${step.agent}) running...`,
+												},
+											],
+											details: loopDetails([...results, current]),
+										});
+									}
+								}
+							: undefined;
+
+						const result = await runSingleAgent(
+							ctx.cwd,
+							agents,
+							step.agent,
+							task,
+							step.cwd,
+							s + 1,
+							signal,
+							loopUpdate,
+							loopDetails,
+						);
+						result.iteration = iter;
+						// A loop can run up to MAX_LOOP_ITERATIONS x MAX_LOOP_STEPS agents and details are
+						// persisted in the session. Tool-result messages are never rendered (only assistant
+						// text/tool calls are), so drop them from finished runs to keep the session small.
+						result.messages = result.messages.filter((m) => m.role !== "toolResult");
+						results.push(result);
+
+						if (isFailedResult(result)) {
+							loopInfo.stopReason = "step-failed";
+							return {
+								content: [
+									{
+										type: "text",
+										text: `Loop stop=step-failed at iteration ${iter}/${loopMaxIterations}, step ${s + 1} (${step.agent}): ${getResultOutput(result)}`,
+									},
+								],
+								details: loopDetails(results),
+								isError: true,
+							};
+						}
+						previousOutput = getFinalOutput(result.messages);
+						iterationOutputs.push(previousOutput);
+					}
+					lastIterationOutputs = iterationOutputs;
+
+					if (loopUntil && loopUntil.test(previousOutput)) {
+						stopReason = "until-matched";
+						break;
+					}
+					// Stuck detection (only while waiting for a condition): every step produced exactly
+					// the same output as in the previous iteration, so another pass is very unlikely to
+					// change anything. Without `until` the caller asked for N passes explicitly; honor it.
+					if (
+						loopUntil &&
+						previousIterationOutputs &&
+						previousIterationOutputs.every((o, i) => o.trim() === (iterationOutputs[i] ?? "").trim())
+					) {
+						stopReason = "no-progress";
+						break;
+					}
+					previousIterationOutputs = iterationOutputs;
+				}
+				loopInfo.stopReason = stopReason;
+
+				const n = loopInfo.iterationsRun;
+				let header: string;
+				if (stopReason === "until-matched") {
+					header = `Loop stop=until-matched: /${params.loop.until}/m matched the output of ${steps[steps.length - 1].agent} at iteration ${n}/${loopMaxIterations}.`;
+				} else if (stopReason === "no-progress") {
+					header = `Loop stop=no-progress: iteration ${n} produced exactly the same outputs as iteration ${n - 1}; /${params.loop.until}/m never matched. Condition NOT met.`;
+				} else if (loopUntil) {
+					header = `Loop stop=max-iterations: ran all ${n}/${loopMaxIterations} iterations and /${params.loop.until}/m never matched. Condition NOT met - the result below is not approved/finished.`;
+				} else {
+					header = `Loop stop=max-iterations: ran ${n}/${loopMaxIterations} iterations (no until condition given).`;
+				}
+				header += ` Agent runs: ${results.length}.`;
+
+				const finalSections = lastIterationOutputs.map(
+					(out, i) =>
+						`### Iteration ${n}, step ${i + 1} [${steps[i].agent}]\n\n${truncateParallelOutput(out || "(no output)")}`,
+				);
+				return {
+					content: [{ type: "text", text: `${header}\n\n${finalSections.join("\n\n---\n\n")}` }],
+					details: loopDetails(results),
+				};
 			}
 
 			if (params.chain && params.chain.length > 0) {
@@ -554,7 +779,7 @@ export default function (pi: ExtensionAPI) {
 
 				for (let i = 0; i < params.chain.length; i++) {
 					const step = params.chain[i];
-					const taskWithContext = step.task.replace(/\{previous\}/g, previousOutput);
+					const taskWithContext = step.task.replace(/\{previous\}/g, () => previousOutput);
 
 					const chainUpdate: OnUpdateCallback | undefined = onUpdate
 						? (partial) => {
@@ -706,7 +931,7 @@ export default function (pi: ExtensionAPI) {
 				};
 			}
 
-			const available = agents.map((a) => `${a.name} (${a.source})`)
+			const available = agents.map((a) => `${a.name} (${a.source})`).join(", ") || "none";
 			return {
 				content: [{ type: "text", text: `Invalid parameters. Available agents: ${available}` }],
 				details: makeDetails("single")([]),
@@ -715,6 +940,27 @@ export default function (pi: ExtensionAPI) {
 
 		renderCall(args, theme, _context) {
 			const scope: AgentScope = args.agentScope ?? "user";
+			if (args.loop && args.loop.steps && args.loop.steps.length > 0) {
+				const loopSteps = args.loop.steps;
+				const max = args.loop.maxIterations ?? DEFAULT_LOOP_ITERATIONS;
+				let text =
+					theme.fg("toolTitle", theme.bold("subagent ")) +
+					theme.fg("accent", `loop (${loopSteps.length} step${loopSteps.length > 1 ? "s" : ""} × ≤${max})`) +
+					(args.loop.until ? theme.fg("warning", ` until /${args.loop.until}/`) : "") +
+					theme.fg("muted", ` [${scope}]`);
+				for (let i = 0; i < Math.min(loopSteps.length, 3); i++) {
+					const cleanTask = (loopSteps[i].task ?? "").replace(/\{(previous|iteration|maxIterations)\}/g, "").trim();
+					const preview = cleanTask.length > 40 ? `${cleanTask.slice(0, 40)}...` : cleanTask;
+					text +=
+						"\n  " +
+						theme.fg("muted", `${i + 1}.`) +
+						" " +
+						theme.fg("accent", loopSteps[i].agent ?? "...") +
+						theme.fg("dim", ` ${preview}`);
+				}
+				if (loopSteps.length > 3) text += `\n  ${theme.fg("muted", `... +${loopSteps.length - 3} more`)}`;
+				return new Text(text, 0, 0);
+			}
 			if (args.chain && args.chain.length > 0) {
 				let text =
 					theme.fg("toolTitle", theme.bold("subagent ")) +
@@ -850,22 +1096,35 @@ export default function (pi: ExtensionAPI) {
 				return total;
 			};
 
-			if (details.mode === "chain") {
+			if (details.mode === "chain" || details.mode === "loop") {
+				const isLoop = details.mode === "loop";
+				const loop = details.loop;
 				const successCount = details.results.filter((r) => r.exitCode === 0).length;
-				const icon = successCount === details.results.length ? theme.fg("success", "✓") : theme.fg("error", "✗");
+				let icon = successCount === details.results.length ? theme.fg("success", "✓") : theme.fg("error", "✗");
+				let headerText =
+					theme.fg("toolTitle", theme.bold("chain ")) +
+					theme.fg("accent", `${successCount}/${details.results.length} steps`);
+				if (isLoop) {
+					const sr = loop?.stopReason;
+					icon = !sr
+						? theme.fg("warning", "⏳")
+						: sr === "until-matched" || (sr === "max-iterations" && !loop?.until)
+							? theme.fg("success", "✓")
+							: sr === "step-failed"
+								? theme.fg("error", "✗")
+								: theme.fg("warning", "◐");
+					headerText =
+						theme.fg("toolTitle", theme.bold("loop ")) +
+						theme.fg("accent", `iteration ${loop?.iterationsRun ?? "?"}/${loop?.maxIterations ?? "?"}`) +
+						(loop?.until ? theme.fg("dim", ` until /${loop.until}/`) : "") +
+						theme.fg(sr === "until-matched" ? "success" : sr ? "warning" : "muted", ` ${sr ?? "running"}`);
+				}
+				const stepLabel = (r: SingleResult) =>
+					isLoop ? `─── Iter ${r.iteration ?? "?"} · Step ${r.step}: ` : `─── Step ${r.step}: `;
 
 				if (expanded) {
 					const container = new Container();
-					container.addChild(
-						new Text(
-							icon +
-								" " +
-								theme.fg("toolTitle", theme.bold("chain ")) +
-								theme.fg("accent", `${successCount}/${details.results.length} steps`),
-							0,
-							0,
-						),
-					);
+					container.addChild(new Text(`${icon} ${headerText}`, 0, 0));
 
 					for (const r of details.results) {
 						const rIcon = r.exitCode === 0 ? theme.fg("success", "✓") : theme.fg("error", "✗");
@@ -874,7 +1133,7 @@ export default function (pi: ExtensionAPI) {
 
 						container.addChild(
 							new Text(
-								`${theme.fg("muted", `─── Step ${r.step}: `) + theme.fg("accent", r.agent)} ${rIcon}`,
+								`${theme.fg("muted", stepLabel(r)) + theme.fg("accent", r.agent)} ${rIcon}`,
 								0,
 								0,
 							),
@@ -906,15 +1165,17 @@ export default function (pi: ExtensionAPI) {
 					return container;
 				}
 
-				let text =
-					icon +
-					" " +
-					theme.fg("toolTitle", theme.bold("chain ")) +
-					theme.fg("accent", `${successCount}/${details.results.length} steps`);
-				for (const r of details.results) {
+				let text = `${icon} ${headerText}`;
+				// Loops can accumulate many runs: the collapsed view shows only the latest two iterations.
+				const collapsedRuns = isLoop
+					? details.results.slice(-Math.max(2, (loop?.stepsPerIteration ?? 1) * 2))
+					: details.results;
+				if (collapsedRuns.length < details.results.length)
+					text += `\n${theme.fg("muted", `... ${details.results.length - collapsedRuns.length} earlier runs`)}`;
+				for (const r of collapsedRuns) {
 					const rIcon = r.exitCode === 0 ? theme.fg("success", "✓") : theme.fg("error", "✗");
 					const displayItems = getDisplayItems(r.messages);
-					text += `\n\n${theme.fg("muted", `─── Step ${r.step}: `)}${theme.fg("accent", r.agent)} ${rIcon}`;
+					text += `\n\n${theme.fg("muted", stepLabel(r))}${theme.fg("accent", r.agent)} ${rIcon}`;
 					if (displayItems.length === 0)
 						text += `\n${theme.fg("muted", "(no output)")}`;
 					else
