@@ -192,6 +192,34 @@ export function adfToText(node: any, depth = 0): string {
 const descText = (d: any): string =>
   typeof d === "string" ? d : d ? adfToText(d).replace(/\n{3,}/g, "\n\n").trim() : "";
 
+/**
+ * Fields shown on a bug's "Details" tab. They are custom fields whose ids differ per site/project,
+ * so they are matched by display name (from `expand=names`), in this order.
+ */
+const DETAIL_FIELD_NAMES = ["Environment", "Preconditions", "Steps to Reproduce", "Expected Result", "Actual Result"];
+
+/** Render a field value (string, ADF, option, array of options) as plain text. */
+function fieldText(v: any): string {
+  if (v == null) return "";
+  if (typeof v === "string" || typeof v === "number") return String(v).trim();
+  if (Array.isArray(v)) return v.map(fieldText).filter(Boolean).join(", ");
+  if (v.type === "doc" || Array.isArray(v.content)) return descText(v);
+  return String(v.value ?? v.name ?? v.displayName ?? "").trim();
+}
+
+/** Collect the "Details" tab fields of an issue (empty ones skipped). */
+export function detailSections(fields: Record<string, any>, names: Record<string, string>): string[] {
+  const byName = new Map<string, string>();
+  for (const [id, name] of Object.entries(names ?? {})) byName.set(String(name).toLowerCase(), id);
+  const out: string[] = [];
+  for (const label of DETAIL_FIELD_NAMES) {
+    const id = byName.get(label.toLowerCase());
+    const text = id ? fieldText(fields[id]) : "";
+    if (text) out.push("", `${label}:`, text);
+  }
+  return out;
+}
+
 /** Search via v3 POST search/jql (v2 POST /search is deprecated). */
 async function searchJql(
   creds: Creds,
@@ -832,7 +860,14 @@ Every result ends with a "config_source:" marker: "env" means credentials came f
           }
           case "show": {
             if (!params.issue_key) return bad("issue_key is required for action=show (e.g. PROJ-123).");
-            const r = await api(creds, 2, `issue/${encodeURIComponent(params.issue_key)}`, "GET", undefined, signal);
+            const r = await api(
+              creds,
+              2,
+              `issue/${encodeURIComponent(params.issue_key)}?expand=names`,
+              "GET",
+              undefined,
+              signal,
+            );
             if (!r.ok) return fin(errText(r), true);
             const f = r.json?.fields ?? {};
             const links = (f.issuelinks ?? [])
@@ -860,6 +895,7 @@ Every result ends with a "config_source:" marker: "env" means credentials came f
                 "",
                 "Description:",
                 descText(f.description) || "No description",
+                ...detailSections(f, r.json?.names ?? {}),
               ].join("\n"),
             );
           }

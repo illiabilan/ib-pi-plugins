@@ -6,7 +6,7 @@
  *   ln -s "$(npm root -g)/@earendil-works/pi-coding-agent/node_modules" node_modules
  *   node --experimental-strip-types extensions/jira/dedupe.test.ts
  */
-import { toDoc, findDuplicateClusters, adfToText, normalizeText } from "./index.ts";
+import { toDoc, findDuplicateClusters, adfToText, normalizeText, detailSections } from "./index.ts";
 
 let pass = 0;
 let fail = 0;
@@ -177,6 +177,32 @@ check("planted 10-issue duplicate group found", bigRes.clusters.some((c) => c.me
 check("empty input safe", findDuplicateClusters([], 0.55).clusters.length === 0);
 check("single issue safe", findDuplicateClusters([toDoc(mk("A-1", "solo"))], 0.55).clusters.length === 0);
 check("empty summaries do not cluster", findDuplicateClusters([mk("A-1", ""), mk("A-2", "")].map(toDoc), 0.55).clusters.length === 0);
+
+// ---- 11. bug "Details" tab fields (show) --------------------------------------
+{
+  const names = {
+    customfield_10230: "Preconditions",
+    customfield_10236: "Steps to Reproduce",
+    customfield_10237: "Expected Result",
+    customfield_10298: "Actual Result",
+    customfield_10160: "Severity",
+  };
+  const fields = {
+    customfield_10236: "1. Open menu\n2. Expand two sections",
+    customfield_10237: { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Both stay open" }] }] },
+    customfield_10298: "First one collapses",
+    customfield_10230: null,
+    customfield_10160: { value: "3 - minor" },
+  };
+  const out = detailSections(fields, names).join("\n");
+  check("details: steps rendered", out.includes("Steps to Reproduce:\n1. Open menu\n2. Expand two sections"), out);
+  check("details: ADF expected rendered", out.includes("Expected Result:\nBoth stay open"), out);
+  check("details: actual rendered", out.includes("Actual Result:\nFirst one collapses"), out);
+  check("details: empty field skipped", !out.includes("Preconditions"), out);
+  check("details: non-detail field ignored", !out.includes("Severity"), out);
+  check("details: order steps<expected<actual", out.indexOf("Steps") < out.indexOf("Expected") && out.indexOf("Expected") < out.indexOf("Actual"));
+  check("details: non-bug issue yields nothing", detailSections({ summary: "x" }, { summary: "Summary" }).length === 0);
+}
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
