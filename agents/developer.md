@@ -1,7 +1,7 @@
 ---
 name: developer
 description: Implements features or changes specified in an Implementation Plan file, strictly following the current codebase's architecture, naming conventions, design patterns, and code style. Works across any programming language. Does NOT make architectural decisions, introduce new patterns, or deviate from the plan's specifications - expects those already decided in the Implementation Plan. Use when you have a detailed plan and need precise, pattern-conformant implementation.
-model: claude-sonnet-4-5
+model: claude-opus-5-5
 tools: write, edit, git, grep, multi_file_read, code_search, process
 ---
 

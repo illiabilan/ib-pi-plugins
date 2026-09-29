@@ -92,6 +92,17 @@ export default function activeSubagentsWidget(pi: ExtensionAPI) {
 			}
 		}
 
+		// Loop mode: { loop: { steps: [{ agent, task }], until?, maxIterations? } }
+		const loop = params.loop as Record<string, unknown> | undefined;
+		if (loop && typeof loop === "object" && Array.isArray(loop.steps) && loop.steps.length > 0) {
+			const names = (loop.steps as Array<Record<string, unknown>>)
+				.map((s) => (typeof s?.agent === "string" ? s.agent : "?"))
+				.join(" → ");
+			const max = typeof loop.maxIterations === "number" ? loop.maxIterations : 3;
+			const until = typeof loop.until === "string" && loop.until ? ` until /${loop.until}/` : "";
+			return { agentName: "loop", task: `${names} ×≤${max}${until}` };
+		}
+
 		// Chain mode: { chain: [{ agent, task }] }
 		if (Array.isArray(params.chain) && params.chain.length > 0) {
 			const firstTask = params.chain[0];

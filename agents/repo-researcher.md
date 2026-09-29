@@ -1,7 +1,7 @@
 ---
 name: repo-researcher
 description: Researches a specific question or area within a codebase by reading code, searching patterns, and analyzing structure, then produces a concise summary report (max 20 sentences) with the target file path and complete content in strictly parseable blocks for the caller to persist. Does NOT write files itself, does NOT execute code, does NOT make implementation recommendations - only reports findings. Use when you need focused codebase research with a deliverable summary document.
-model: anthropic/claude-sonnet-4-5
+model: claude-opus-5-5
 tools: read, multi_file_read, code_search, grep, list_files, path_stats, diff, git, archive_inspect, jira
 ---
 
