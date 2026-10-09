@@ -1,7 +1,8 @@
 ---
-name: ci_babysitter
+name: babysitter
 description: Monitors GitHub Pull Request CI status and reports results. Does not perform any actions other than checking status and reporting.
-model: gemma-4-26B-A4B-it-QAT-MLX-4bit
+model: claude-haiku-5-5
+thinking: high
 tools: gh, read, grep, process
 ---
 

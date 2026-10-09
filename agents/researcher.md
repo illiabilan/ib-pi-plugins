@@ -1,7 +1,8 @@
 ---
 name: researcher
 description: Conducts comprehensive research across multiple sources (Slack threads, codebase, Jira issues, Datadog logs/metrics, files, Git history) based on a specific query and returns a unified, structured report with precise source references. Does NOT modify files, does NOT make implementation decisions, does NOT write code - only gathers, organizes, and reports findings in a parseable format for orchestrator agents. Use when you need cross-platform investigation with structured output.
-model: claude-opus-5-5
+model: claude-haiku-5-5
+thinking: max
 tools: slack, jira, datadog, git, grep, multi_file_read, code_search, list_files, read, path_stats, diff
 ---
 
