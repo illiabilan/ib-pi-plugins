@@ -1,4 +1,4 @@
-# Clear, Concise, Actionable Communication
+# 1. Clear, Concise, Actionable Communication
 
 ## Purpose 
 
@@ -151,3 +151,41 @@ not caution. Distribution.
 
 Everything else in the document is downstream of these.
 ```
+
+
+# 2. Git Commit Guidelines
+
+When creating git commits, ALWAYS follow the Conventional Commits specification with a clear, high-signal structure:
+
+## 1. Commit Structure
+
+  ():
+
+  • <Key architectural / infrastructure changes>
+  • <Functional / domain / feature changes>
+  • <Configuration / environment adjustments>
+  •
+
+
+## 2. Commit Types
+  - `feat`: New feature or capability
+  - `fix`: Bug fix
+  - `refactor`: Code change that neither fixes a bug nor adds a feature
+  - `perf`: Performance improvement
+  - `test`: Adding or correcting tests
+  - `chore` / `ci`: Build process, CI/CD, dependencies, or tooling changes
+  - `docs`: Documentation only changes
+
+## 3. Formatting Rules
+  - **Header Line:**
+    - Written in lowercase for type (e.g. `feat:`, `fix:`).
+    - Imperative, present tense (e.g. "add", "configure", "refactor" — NOT "added" or "adds").
+    - Do NOT end the header with a period.
+    - Keep under 72 characters.
+  - **Blank Line:** Always leave exactly one blank line between the header and the bulleted body.
+  - **Body Bullets:**
+    - Focus on *what* changed and *why* (architectural impact), rather than listing raw filenames.
+    - Group related changes together logically (e.g., Backend, Infrastructure, UI, Tests).
+    - Mention specific technologies, services, or key classes when relevant (e.g., "Amazon RDS PostgreSQL 16", "ServerEnvironment enum").
+    - Keep bullets concise, clear, and professional.
+

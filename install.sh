@@ -158,7 +158,7 @@ ${BOLD}PRESETS:${RESET}
       ${BOLD}recommended, global${RESET} Recommended global set (bash-replacements + core tools + skills + agents + prompts)
       ${BOLD}bash-replacement${RESET}    Pure bash-replacement tools (grep, list-files, git, file-ops, etc.)
       ${BOLD}typescript, ts${RESET}      TypeScript / Node tooling (node-project, pi-trace, gh, process)
-      ${BOLD}android, gradle${RESET}     Android / Gradle tooling (gradle-build, archive-inspect, gh, process)
+      ${BOLD}android, gradle${RESET}     Android / Gradle tooling (gradle-build, archive-inspect, gh, process, android-vqa)
       ${BOLD}core${RESET}                Essential subset (code-search, subagent, bash-guardrail, token-stats, git, grep, list-files)
 
 ${BOLD}COMPONENT SELECTION:${RESET}
@@ -247,7 +247,7 @@ show_list() {
   printf "  • ${BOLD}recommended / global${RESET}: Recommended global set (bash-replacements + core tools + skills + agents + prompts)\n"
   printf "  • ${BOLD}bash-replacement${RESET}: grep, list-files, git, file-ops, path-stats, diff, file-write-plus, env-info, bash-guardrail\n"
   printf "  • ${BOLD}typescript / ts${RESET}: node-project, pi-trace, gh, process\n"
-  printf "  • ${BOLD}android / gradle${RESET}: gradle-build, archive-inspect, gh, process\n"
+  printf "  • ${BOLD}android / gradle${RESET}: gradle-build, archive-inspect, gh, process, android-vqa\n"
   printf "  • ${BOLD}core${RESET}: code-search, subagent, bash-guardrail, token-stats, git, grep, list-files\n"
 }
 
@@ -495,7 +495,7 @@ run_interactive_wizard() {
   printf "  1) ${GREEN}All${RESET} (Everything: all extensions, skills, agents, prompts)\n"
   printf "  2) ${CYAN}Recommended / Global Set${RESET} (General-purpose tools & skills)\n"
   printf "  3) ${CYAN}TypeScript / Node Tools${RESET} (node-project, pi-trace, gh, process)\n"
-  printf "  4) ${CYAN}Android / Gradle Tools${RESET} (gradle-build, archive-inspect, gh, process)\n"
+  printf "  4) ${CYAN}Android / Gradle Tools${RESET} (gradle-build, archive-inspect, gh, process, android-vqa)\n"
   printf "  5) ${CYAN}Bash-Replacement Set Only${RESET}\n"
   printf "Choice [1-5, default: 1]: "
   read -r choice_preset
@@ -631,7 +631,7 @@ resolve_selected_items() {
         INSTALL_PROMPTS=false
         ;;
       android|gradle|jvm)
-        local android_set=("gradle-build" "archive-inspect" "gh" "process")
+        local android_set=("gradle-build" "archive-inspect" "gh" "process" "android-vqa")
         SELECTED_EXTENSIONS=()
         for item in "${android_set[@]}"; do
           if [ -d "$SCRIPT_DIR/extensions/$item" ]; then

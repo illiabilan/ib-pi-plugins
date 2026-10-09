@@ -1,0 +1,20 @@
+{
+  "name": "android-vqa",
+  "version": "1.0.0",
+  "description": "android_vqa tool for Pi: scripted emulator scenarios with UI-dump assertions, captioned GIF evidence, frame contact sheets and a fixture-mock proxy",
+  "main": "index.ts",
+  "license": "MIT",
+  "keywords": ["pi", "pi-coding-agent", "android", "vqa", "gif", "adb", "extension"],
+  "pi": {
+    "extensions": ["./index.ts"]
+  },
+  "devDependencies": {
+    "@earendil-works/pi-ai": "^0.84.2",
+    "@earendil-works/pi-coding-agent": "^0.84.2",
+    "@earendil-works/pi-tui": "^0.84.2",
+    "@types/node": "^26.1.2",
+    "jiti": "^2.7.0",
+    "typebox": "^1.3.10",
+    "typescript": "^7.0.2"
+  }
+}

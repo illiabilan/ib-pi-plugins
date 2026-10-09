@@ -23,6 +23,7 @@ import { type AgentConfig, type AgentScope, discoverAgents } from "./agents.ts";
  * giving it an isolated context window.
  */
 
+const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
 const MAX_PARALLEL_TASKS = 8;
 const MAX_CONCURRENCY = 4;
 const COLLAPSED_ITEM_COUNT = 10;
@@ -298,6 +299,7 @@ async function runSingleAgent(
 	signal: AbortSignal | undefined,
 	onUpdate: OnUpdateCallback | undefined,
 	makeDetails: (results: SingleResult[]) => SubagentDetails,
+	overrides?: { model?: string; thinking?: string },
 ): Promise<SingleResult> {
 	const agent = agents.find((a) => a.name === agentName);
 
@@ -316,7 +318,10 @@ async function runSingleAgent(
 	}
 
 	const args: string[] = ["--mode", "json", "-p", "--no-session"];
-	if (agent.model) args.push("--model", agent.model);
+	const effectiveModel = overrides?.model || agent.model;
+	const effectiveThinking = overrides?.thinking || agent.thinking;
+	if (effectiveModel) args.push("--model", effectiveModel);
+	if (effectiveThinking) args.push("--thinking", effectiveThinking);
 	if (agent.tools && agent.tools.length > 0) args.push("--tools", agent.tools.join(","));
 
 	let tmpPromptDir: string | null = null;
@@ -330,7 +335,7 @@ async function runSingleAgent(
 		messages: [],
 		stderr: "",
 		usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 0, turns: 0 },
-		model: agent.model,
+		model: effectiveModel,
 		step,
 	};
 
@@ -452,19 +457,34 @@ async function runSingleAgent(
 	}
 }
 
+const ModelOverride = Type.Optional(
+	Type.String({ description: "Model for this agent (overrides the agent's frontmatter model), e.g. 'anthropic/claude-sonnet-4-5' or 'sonnet'." }),
+);
+const ThinkingOverride = Type.Optional(
+	StringEnum(THINKING_LEVELS, {
+		description: "Reasoning level for this agent (overrides the agent's frontmatter thinking).",
+	}),
+);
+
 const TaskItem = Type.Object({
+	model: ModelOverride,
+	thinking: ThinkingOverride,
 	agent: Type.String({ description: "Name of the agent to invoke" }),
 	task: Type.String({ description: "Task to delegate to the agent" }),
 	cwd: Type.Optional(Type.String({ description: "Working directory for the agent process" })),
 });
 
 const ChainItem = Type.Object({
+	model: ModelOverride,
+	thinking: ThinkingOverride,
 	agent: Type.String({ description: "Name of the agent to invoke" }),
 	task: Type.String({ description: "Task with optional {previous} placeholder for prior output" }),
 	cwd: Type.Optional(Type.String({ description: "Working directory for the agent process" })),
 });
 
 const LoopStep = Type.Object({
+	model: ModelOverride,
+	thinking: ThinkingOverride,
 	agent: Type.String({ description: "Name of the agent to invoke" }),
 	task: Type.String({
 		description:
@@ -501,6 +521,8 @@ const AgentScopeSchema = StringEnum(["user", "project", "both"] as const, {
 });
 
 const SubagentParams = Type.Object({
+	model: ModelOverride,
+	thinking: ThinkingOverride,
 	agent: Type.Optional(Type.String({ description: "Name of the agent to invoke (for single mode)" })),
 	task: Type.Optional(Type.String({ description: "Task to delegate to the agent (for single mode)" })),
 	tasks: Type.Optional(Type.Array(TaskItem, { description: "Array of {agent, task} for parallel execution" })),
@@ -705,6 +727,7 @@ export default function (pi: ExtensionAPI) {
 							signal,
 							loopUpdate,
 							loopDetails,
+							{ model: step.model, thinking: step.thinking },
 						);
 						result.iteration = iter;
 						// A loop can run up to MAX_LOOP_ITERATIONS x MAX_LOOP_STEPS agents and details are
@@ -804,6 +827,7 @@ export default function (pi: ExtensionAPI) {
 						signal,
 						chainUpdate,
 						makeDetails("chain"),
+						{ model: step.model, thinking: step.thinking },
 					);
 					results.push(result);
 
@@ -879,6 +903,7 @@ export default function (pi: ExtensionAPI) {
 							}
 						},
 						makeDetails("parallel"),
+						{ model: t.model, thinking: t.thinking },
 					);
 					allResults[index] = result;
 					emitParallelUpdate();
@@ -915,6 +940,7 @@ export default function (pi: ExtensionAPI) {
 					signal,
 					onUpdate,
 					makeDetails("single"),
+					{ model: params.model, thinking: params.thinking },
 				);
 				const isError = isFailedResult(result);
 				if (isError) {

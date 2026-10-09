@@ -102,6 +102,7 @@ its own numbers.
 | `env-info` | `env_info` | `which`, `command -v`, `env \| grep KEY` | 28 |
 | `archive-inspect` | `archive_inspect` | `unzip` + `javap` over gradle-cache jars | 24 |
 | `gh` | `gh` | `gh pr create/view/search/merge`, `gh run list/view/rerun` | 15 |
+| `android-vqa` | `android_vqa` | adb `screenrecord` + `uiautomator` + ffmpeg + mitmproxy shell scripts for validation GIFs | — |
 | `bash-guardrail` | *(no tool)* | intercepts leftover bash habits | — |
 
 Highlights from validation: `list_files` matches `find` byte-for-byte on 23715

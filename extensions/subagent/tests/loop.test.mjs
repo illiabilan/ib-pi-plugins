@@ -24,7 +24,7 @@ if (argv.includes("--mode") && argv.includes("json")) {
 	const task = argv[argv.length - 1];
 	const iter = Number((task.match(/ITER=(\d+)/) || [])[1] || 0);
 	const scenario = process.env.FAKE_SCENARIO || "";
-	if (process.env.FAKE_LOG) fs.appendFileSync(process.env.FAKE_LOG, `${JSON.stringify({ agent, task })}\n`);
+	if (process.env.FAKE_LOG) fs.appendFileSync(process.env.FAKE_LOG, `${JSON.stringify({ agent, task, argv })}\n`);
 
 	let text = "";
 	let exit = 0;
@@ -76,14 +76,31 @@ async function main() {
 		);
 	}
 
+	fs.writeFileSync(
+		path.join(agentsDir, "fm.md"),
+		"---\nname: fm\ndescription: fake fm\nmodel: fm-model\nthinking: low\n---\nFAKE_AGENT:echo\n",
+	);
+
 	let tool;
 	// Load the extension the way pi does (jiti), aliasing the pi package to the global install.
 	const piPkg = process.env.PI_PKG_DIR || "/opt/homebrew/lib/node_modules/@earendil-works/pi-coding-agent";
 	const { createJiti } = await import(
-		fs.existsSync(path.join(piPkg, "node_modules/jiti")) ? path.join(piPkg, "node_modules/jiti/lib/jiti.mjs") : "jiti"
+		fs.existsSync(path.join(piPkg, "node_modules/jiti"))
+			? path.join(piPkg, "node_modules/jiti/lib/jiti.mjs")
+			: fs.existsSync(path.join(piPkg, "../../jiti"))
+				? path.join(piPkg, "../../jiti/lib/jiti.mjs")
+				: "jiti"
 	);
 	const jiti = createJiti(import.meta.url, {
-		alias: { "@earendil-works/pi-coding-agent": path.join(piPkg, "dist/index.js") },
+		alias: {
+			"@earendil-works/pi-coding-agent": path.join(piPkg, "dist/index.js"),
+			...Object.fromEntries(
+				["pi-tui", "pi-ai"]
+					.filter((p) => fs.existsSync(path.join(piPkg, "..", p, "dist/index.js")))
+					.map((p) => [`@earendil-works/${p}`, path.join(piPkg, "..", p, "dist/index.js")]),
+			),
+			...(fs.existsSync(path.join(piPkg, "../../typebox")) ? { typebox: path.join(piPkg, "../../typebox/build/index.mjs") } : {}),
+		},
 	});
 	const mod = await jiti.import(new URL("../index.ts", import.meta.url).pathname);
 	mod.default({ registerTool: (def) => (tool = def) });
@@ -226,6 +243,24 @@ async function main() {
 			threw = /aborted/.test(String(e));
 		}
 		check("12 abort rejects promptly", threw && Date.now() - t0 < 8000, `${threw} ${Date.now() - t0}ms`);
+	}
+
+	// 13. model/thinking overrides
+	{
+		const val = (argv, flag) => (argv.includes(flag) ? argv[argv.indexOf(flag) + 1] : undefined);
+		const a = await run("x", { agent: "fm", task: "t" });
+		check("13 frontmatter model+thinking used", val(a.calls[0].argv, "--model") === "fm-model" && val(a.calls[0].argv, "--thinking") === "low", JSON.stringify(a.calls[0].argv));
+		const b = await run("x", { agent: "fm", task: "t", model: "m2", thinking: "high" });
+		check("13 single: call overrides frontmatter", val(b.calls[0].argv, "--model") === "m2" && val(b.calls[0].argv, "--thinking") === "high", JSON.stringify(b.calls[0].argv));
+		const c = await run("x", { agent: "echo", task: "t" });
+		check("13 no flags when unset", !c.calls[0].argv.includes("--model") && !c.calls[0].argv.includes("--thinking"));
+		const d = await run("x", { tasks: [{ agent: "echo", task: "t", model: "pm", thinking: "minimal" }] });
+		check("13 parallel", val(d.calls[0].argv, "--model") === "pm" && val(d.calls[0].argv, "--thinking") === "minimal");
+		const e = await run("x", { chain: [{ agent: "echo", task: "t", model: "cm", thinking: "xhigh" }] });
+		check("13 chain", val(e.calls[0].argv, "--model") === "cm" && val(e.calls[0].argv, "--thinking") === "xhigh");
+		const f = await run("x", { loop: { steps: [{ agent: "echo", task: "t", model: "lm", thinking: "off" }], maxIterations: 1 } });
+		check("13 loop", val(f.calls[0].argv, "--model") === "lm" && val(f.calls[0].argv, "--thinking") === "off");
+		check("13 result shows effective model", b.res.details.results[0].model === "m2" || b.res.details.results[0].model === "fake-model");
 	}
 
 	// 12b. tool-result messages are stripped from finished loop runs (session size), kept in chain
