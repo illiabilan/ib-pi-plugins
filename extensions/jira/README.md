@@ -103,3 +103,9 @@ the older `jira_cli.sh link` command had these inverted.
 - Everything else uses REST v2 (plain-text descriptions rather than ADF); ADF coming back from the
   v3 search endpoint is flattened to text for `show` and for duplicate scoring.
 - No npm dependencies (uses `fetch` from Node 18+).
+
+## Attachments
+
+- `attachments` `{issue_key}`: list files (also shown by `show`).
+- `download_attachment` `{attachment_id}` or `{issue_key, filename}`, optional `save_to`: saves locally. Images and text are returned inline, video/pdf/office files return the saved path.
+- `upload_attachment` `{issue_key|issue_keys, file_path|file_paths}`: write action, needs approval.

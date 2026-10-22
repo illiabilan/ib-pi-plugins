@@ -14,6 +14,15 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type, type Static } from "typebox";
 import { Text } from "@earendil-works/pi-tui";
+import {
+  type Block,
+  MAX_DOWNLOAD_BYTES,
+  describeFile,
+  fmtSize,
+  readForUpload,
+  safeName,
+  saveBuffer,
+} from "./filecontent.ts";
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
@@ -130,6 +139,25 @@ async function request(
     /* non-JSON (HTML error page etc.) */
   }
   return { ok: res.ok, status: res.status, json, text };
+}
+
+const attLine = (a: any): string =>
+  `  [${a.id}] ${a.filename} (${a.mimeType ?? "?"}, ${fmtSize(a.size)}, ${a.author?.displayName ?? "?"}, ${day(a.created)})`;
+
+/** Raw authenticated GET of a binary resource (attachment content). */
+async function requestBinary(
+  creds: Creds,
+  path: string,
+  signal?: AbortSignal,
+): Promise<{ buf: Buffer; contentType: string } | { error: string }> {
+  const auth = Buffer.from(`${creds.username}:${creds.token}`).toString("base64");
+  const res = await fetch(`${creds.url}/${path}`, { headers: { Authorization: `Basic ${auth}` }, redirect: "follow", signal });
+  if (!res.ok) return { error: `HTTP ${res.status} ${res.statusText}`.trim() };
+  const len = Number(res.headers.get("content-length") ?? "0");
+  if (len > MAX_DOWNLOAD_BYTES) return { error: `File too large to download (${fmtSize(len)}).` };
+  const buf = Buffer.from(await res.arrayBuffer());
+  if (buf.length > MAX_DOWNLOAD_BYTES) return { error: `File too large to download (${fmtSize(buf.length)}).` };
+  return { buf, contentType: res.headers.get("content-type") ?? "" };
 }
 
 /** Platform REST API (/rest/api/2|3). */
@@ -544,6 +572,9 @@ const actionEnum = [
   "create",
   "update",
   "link",
+  "attachments",
+  "download_attachment",
+  "upload_attachment",
   "test_token",
 ] as const;
 
@@ -552,7 +583,7 @@ const schema = Type.Object({
     actionEnum.map((a) => Type.Literal(a)),
     {
       description:
-        "show=one issue; boards; backlog=board backlog (ranked); find_duplicates=cluster near-identical issues; list=my issues; search=JQL; projects; me; stats; sprint_stats; link_types; transitions=available workflow moves; createmeta=creatable fields; create; update; transition=change status; comment; link; delete; test_token",
+        "show=one issue; boards; backlog=board backlog (ranked); find_duplicates=cluster near-identical issues; list=my issues; search=JQL; projects; me; stats; sprint_stats; link_types; transitions=available workflow moves; createmeta=creatable fields; create; update; transition=change status; comment; link; delete; attachments=list files on an issue; download_attachment=save an attachment locally (images/text shown inline); upload_attachment=attach local file(s); test_token",
     },
   ),
   issue_key: Type.Optional(Type.String({ description: "Issue key, e.g. PROJ-123. For show/update/link (source)/transition/comment/delete." })),
@@ -598,6 +629,13 @@ const schema = Type.Object({
   threshold: Type.Optional(
     Type.Number({ description: "For action=find_duplicates: similarity cutoff 0..1 (default 0.55). Lower = more candidates and more noise; 0.75+ = near-identical only." }),
   ),
+  attachment_id: Type.Optional(Type.String({ description: "For download_attachment: attachment id (shown by show/attachments)." })),
+  filename: Type.Optional(
+    Type.String({ description: "For download_attachment: pick the attachment of issue_key by exact file name instead of attachment_id." }),
+  ),
+  save_to: Type.Optional(Type.String({ description: "For download_attachment: directory to save into (default: system temp dir)." })),
+  file_path: Type.Optional(Type.String({ description: "For upload_attachment: local file to attach." })),
+  file_paths: Type.Optional(Type.Array(Type.String(), { description: "For upload_attachment: several local files to attach." })),
   confirm_delete: Type.Optional(
     Type.Boolean({ description: "Required true for action=delete. Set it only when the user explicitly asked to DELETE (not close) those issues." }),
   ),
@@ -652,7 +690,8 @@ export default function (pi: ExtensionAPI) {
     description: `Query and modify Jira issues over the REST API (credentials from JIRA_USERNAME / JIRA_API_TOKEN / JIRA_URL env vars).
 
 Read actions: show (one issue with description), list (issues assigned to you), search (JQL, auto-paginated), boards, backlog (ranked board backlog), find_duplicates (local similarity clustering over a backlog/JQL scope), projects, me, stats, sprint_stats, link_types, transitions, createmeta, test_token.
-Write actions: create, update, transition (change status), comment, link, delete. These mutate real shared Jira state — only call them after the user has seen the exact payload and explicitly approved it. In interactive sessions jira also asks the user to confirm each write. delete is IRREVERSIBLE and additionally requires confirm_delete:true.
+Attachments: attachments (list files on an issue_key), download_attachment ({attachment_id} or {issue_key, filename}; images and text are returned inline, video/pdf/office files are saved and the path returned), upload_attachment ({issue_key|issue_keys, file_path|file_paths}, a write action).
+Write actions: create, update, transition (change status), comment, link, delete, upload_attachment. These mutate real shared Jira state — only call them after the user has seen the exact payload and explicitly approved it. In interactive sessions jira also asks the user to confirm each write. delete is IRREVERSIBLE and additionally requires confirm_delete:true.
 
 Backlog cleanup / de-duplication flow:
   1. {"action":"find_duplicates","project":"PROJ"} (or jql/board_id) — returns clusters with scores, a suggested canonical issue, and which pairs are already linked as duplicates.
@@ -685,11 +724,12 @@ Every result ends with a "config_source:" marker: "env" means credentials came f
       "For backlog de-duplication use jira action='find_duplicates' (project/jql/board_id + optional threshold) instead of pulling hundreds of issues into context and eyeballing them: it scores every pair locally and returns clusters, a suggested canonical issue and pairs already linked as duplicates. Its clusters are CANDIDATES — present them to the user for a decision, never auto-close them.",
       "Closing a duplicate is a transition, not an update: jira action='update' cannot change status. Use action='transitions' to see the allowed moves for that issue, then action='transition' with transition/resolution/body. Prefer closing as duplicate (link + transition) over action='delete', which is irreversible and needs confirm_delete:true plus an explicit user request to delete.",
       "For repetitive cleanup pass issue_keys:[...] to transition/comment/delete/link instead of one call per issue — the batch is approved once and each key's outcome is reported separately.",
+      "To read an issue's screenshots, videos or documents use jira action='attachments' (list) then action='download_attachment'; images and text come back inline, other types are saved and the path returned. Attach local files with action='upload_attachment' (needs user approval like other writes).",
       "If a jira result reports config_source: shell-profile, note that pi did not inherit the Jira env vars and the user should restart pi from a shell where their profile is loaded.",
     ],
     parameters: schema,
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
-      const WRITE_ACTIONS = new Set(["create", "update", "link", "transition", "comment", "delete"]);
+      const WRITE_ACTIONS = new Set(["create", "update", "link", "transition", "comment", "delete", "upload_attachment"]);
       const targets = (params.issue_keys?.length ? params.issue_keys : params.issue_key ? [params.issue_key] : []).map(
         (k) => k.trim().toUpperCase(),
       );
@@ -698,7 +738,9 @@ Every result ends with a "config_source:" marker: "env" means credentials came f
         const summary =
           params.action === "link"
             ? `${who} ${params.link_type} ${params.target_key}`
-            : params.action === "transition"
+            : params.action === "upload_attachment"
+              ? `${who}\nAttach: ${[...(params.file_paths ?? []), ...(params.file_path ? [params.file_path] : [])].join(", ")}`
+              : params.action === "transition"
               ? `${who} \u2192 ${params.transition}${params.resolution ? ` (resolution: ${params.resolution})` : ""}${
                   params.body ? `\ncomment: ${params.body.slice(0, 300)}` : ""
                 }`
@@ -892,12 +934,77 @@ Every result ends with a "config_source:" marker: "env" means credentials came f
                 `Created:  ${day(f.created)}`,
                 `Updated:  ${day(f.updated)}`,
                 ...(links.length ? ["Links:", ...links] : []),
+                ...(Array.isArray(f.attachment) && f.attachment.length
+                  ? ["Attachments (download_attachment {attachment_id}):", ...f.attachment.map(attLine)]
+                  : []),
                 "",
                 "Description:",
                 descText(f.description) || "No description",
                 ...detailSections(f, r.json?.names ?? {}),
               ].join("\n"),
             );
+          }
+          case "attachments": {
+            if (!params.issue_key) return bad("issue_key is required for action=attachments.");
+            const r = await api(creds, 2, `issue/${encodeURIComponent(params.issue_key)}?fields=attachment,summary`, "GET", undefined, signal);
+            if (!r.ok) return fin(errText(r), true);
+            const atts: any[] = r.json?.fields?.attachment ?? [];
+            return fin(
+              atts.length
+                ? `${atts.length} attachment(s) on ${r.json.key}:\n${atts.map(attLine).join("\n")}`
+                : `No attachments on ${r.json.key}.`,
+            );
+          }
+          case "download_attachment": {
+            let id = params.attachment_id?.trim();
+            let meta: any = null;
+            if (!id) {
+              if (!params.issue_key || !params.filename)
+                return bad("download_attachment needs attachment_id, or issue_key + filename.");
+              const r = await api(creds, 2, `issue/${encodeURIComponent(params.issue_key)}?fields=attachment`, "GET", undefined, signal);
+              if (!r.ok) return fin(errText(r), true);
+              const atts: any[] = r.json?.fields?.attachment ?? [];
+              meta = atts.filter((a) => a.filename === params.filename).pop() ?? atts.filter((a) => String(a.filename).toLowerCase() === params.filename!.toLowerCase()).pop();
+              if (!meta) return bad(`No attachment named "${params.filename}" on ${params.issue_key}. Available: ${atts.map((a) => a.filename).join(", ") || "none"}`);
+              id = String(meta.id);
+            } else {
+              if (!/^\d+$/.test(id)) return bad(`attachment_id must be numeric (got "${id}").`);
+              const m = await api(creds, 2, `attachment/${id}`, "GET", undefined, signal);
+              if (!m.ok) return fin(errText(m), true);
+              meta = m.json;
+            }
+            if (meta?.size && meta.size > MAX_DOWNLOAD_BYTES) return bad(`Attachment too large (${fmtSize(meta.size)}).`);
+            const got = await requestBinary(creds, `rest/api/2/attachment/content/${id}`, signal);
+            if ("error" in got) return fin(`Download failed: ${got.error}`, true);
+            const name = meta?.filename ?? `attachment-${id}`;
+            const saved = saveBuffer(got.buf, safeName(name), "pi-jira-files", params.save_to);
+            const blocks: Block[] = describeFile(saved, name, meta?.mimeType || got.contentType.split(";")[0], got.buf.length);
+            const first = blocks.findIndex((b) => b.type === "text");
+            (blocks[first] as any).text += `\n\nconfig_source: ${creds.source}`;
+            return { content: blocks, details: { action: params.action, configSource: creds.source, isError: false }, isError: false };
+          }
+          case "upload_attachment": {
+            if (!targets.length) return bad("issue_key or issue_keys is required for action=upload_attachment.");
+            const paths = [...(params.file_paths ?? []), ...(params.file_path ? [params.file_path] : [])];
+            if (!paths.length) return bad("file_path or file_paths is required for action=upload_attachment.");
+            const files = paths.map((p) => readForUpload(p));
+            const badFile = files.find((f) => "error" in f) as { error: string } | undefined;
+            if (badFile) return bad(badFile.error);
+            const ok = files as { path: string; buf: Buffer; name: string }[];
+            const res = await perKey(targets, async (key) => {
+              const form = new FormData();
+              for (const f of ok) form.append("file", new Blob([new Uint8Array(f.buf)]), f.name);
+              const auth = Buffer.from(`${creds.username}:${creds.token}`).toString("base64");
+              const r = await fetch(`${creds.url}/rest/api/2/issue/${encodeURIComponent(key)}/attachments`, {
+                method: "POST",
+                headers: { Authorization: `Basic ${auth}`, "X-Atlassian-Token": "no-check", Accept: "application/json" },
+                body: form,
+                signal,
+              });
+              if (!r.ok) return `  \u2717 ${key}: HTTP ${r.status} ${(await r.text()).slice(0, 300)}`;
+              return `  \u2713 ${key}: attached ${ok.map((f) => f.name).join(", ")}`;
+            });
+            return fin(`Attach: ${res.ok} ok, ${res.failed} failed\n${res.text}`, res.failed > 0);
           }
           case "list": {
             const r = await searchJql(

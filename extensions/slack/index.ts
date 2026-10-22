@@ -36,6 +36,15 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { createHash, randomBytes } from "node:crypto";
+import {
+  type Block,
+  MAX_DOWNLOAD_BYTES,
+  describeFile,
+  fmtSize,
+  readForUpload,
+  safeName,
+  saveBuffer,
+} from "./filecontent.ts";
 
 const PROFILES = [".zshrc", ".zprofile", ".zshenv", ".bash_profile", ".bashrc", ".profile"];
 const CACHE_DIR = join(homedir(), ".pi", "agent", "cache");
@@ -192,6 +201,75 @@ function apiErr(method: string, r: ApiResult): string {
         ? " — this client token lacks a capability the Slack web app itself would have; unusual for xoxc, re-copy the token."
         : "";
   return `Slack API error (${method}): ${r.error ?? "unknown"}${hint}`;
+}
+
+/** Fetch a Slack-hosted file (files.slack.com) with the client credentials. */
+async function fetchFile(
+  creds: Creds,
+  url: string,
+  signal?: AbortSignal,
+): Promise<{ buf: Buffer; contentType: string } | { error: string }> {
+  let u: URL;
+  try {
+    u = new URL(url);
+  } catch {
+    return { error: `Invalid file URL: ${url}` };
+  }
+  if (!/(^|\.)slack\.com$|(^|\.)slack-files\.com$/.test(u.hostname))
+    return { error: `Refusing to send Slack credentials to non-Slack host ${u.hostname}.` };
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      headers: { Authorization: `Bearer ${creds.token}`, Cookie: `d=${creds.cookie}` },
+      redirect: "follow",
+      signal,
+    });
+  } catch (e: any) {
+    if (e?.name === "AbortError") throw e;
+    return { error: `network_error: ${e?.message ?? String(e)}` };
+  }
+  if (!res.ok) return { error: `Download failed: HTTP ${res.status}` };
+  const len = Number(res.headers.get("content-length") ?? "0");
+  if (len > MAX_DOWNLOAD_BYTES) return { error: `File too large to download (${fmtSize(len)}).` };
+  const contentType = res.headers.get("content-type") ?? "";
+  const buf = Buffer.from(await res.arrayBuffer());
+  if (buf.length > MAX_DOWNLOAD_BYTES) return { error: `File too large to download (${fmtSize(buf.length)}).` };
+  if (contentType.startsWith("text/html") && /<html|<!doctype/i.test(buf.subarray(0, 200).toString("utf8")))
+    return { error: "Slack returned an HTML page instead of the file (auth expired or no access to this file)." };
+  return { buf, contentType };
+}
+
+/** Upload a local file via Slack's external-upload flow and share it. */
+async function uploadFile(
+  creds: Creds,
+  p: { path: string; name: string; title?: string; channel: string; thread_ts?: string; comment?: string },
+  signal?: AbortSignal,
+): Promise<{ ok: true; id: string; permalink?: string } | { ok: false; error: string }> {
+  const f = readForUpload(p.path);
+  if ("error" in f) return { ok: false, error: f.error };
+  const g = await call(creds, "files.getUploadURLExternal", { filename: p.name, length: f.buf.length }, signal);
+  if (!g.ok) return { ok: false, error: apiErr("files.getUploadURLExternal", g) };
+  let up: Response;
+  try {
+    up = await fetch(g.upload_url, { method: "POST", body: new Uint8Array(f.buf), signal });
+  } catch (e: any) {
+    if (e?.name === "AbortError") throw e;
+    return { ok: false, error: `upload_network_error: ${e?.message ?? String(e)}` };
+  }
+  if (!up.ok) return { ok: false, error: `Upload of bytes failed: HTTP ${up.status}` };
+  const c = await call(
+    creds,
+    "files.completeUploadExternal",
+    {
+      files: JSON.stringify([{ id: g.file_id, title: p.title || p.name }]),
+      channel_id: p.channel,
+      thread_ts: p.thread_ts,
+      initial_comment: p.comment,
+    },
+    signal,
+  );
+  if (!c.ok) return { ok: false, error: apiErr("files.completeUploadExternal", c) };
+  return { ok: true, id: g.file_id, permalink: c.files?.[0]?.permalink };
 }
 
 /* ------------------------------------------------------------------ name cache */
@@ -657,7 +735,11 @@ function msgLine(m: any, withDate: boolean): string {
   const body = renderText(m.text ?? "").replace(/\n/g, "\n    ");
   const extras: string[] = [];
   if (Array.isArray(m.files) && m.files.length)
-    extras.push(`📎 ${m.files.map((f: any) => `${f.name ?? "file"}${f.filetype ? `.${f.filetype}` : ""}`).join(", ")}`);
+    extras.push(
+      `📎 ${m.files
+        .map((f: any) => `${f.name ?? "file"} [${f.id ?? "?"}${f.mimetype ? `, ${f.mimetype}` : ""}${f.size ? `, ${fmtSize(f.size)}` : ""}]`)
+        .join(", ")} (download: slack {action:"download", file:"<id>"})`,
+    );
   if (Array.isArray(m.reactions) && m.reactions.length)
     extras.push(m.reactions.map((r: any) => `:${r.name}:×${r.count}`).join(" "));
   if (m.reply_count) extras.push(`↳ ${m.reply_count} repl${m.reply_count === 1 ? "y" : "ies"}`);
@@ -768,10 +850,12 @@ const schema = Type.Object({
       Type.Literal("post"),
       Type.Literal("reply"),
       Type.Literal("react"),
+      Type.Literal("download"),
+      Type.Literal("upload"),
     ],
     {
       description:
-        "Read: whoami, resolve (a message/thread permalink -> full thread), history (a channel), thread, search (Slack query), channels, users, mentions (recent @-mentions of me). Write (preview+confirm): post, reply, react.",
+        "Read: whoami, resolve (a message/thread permalink -> full thread), history (a channel), thread, search (Slack query), channels, users, mentions (recent @-mentions of me). download (a file/photo/video/document by id or URL -> saved locally; images and text are shown inline). Write (preview+confirm): post, reply, react, upload (a local file to a channel/thread).",
     },
   ),
   link: Type.Optional(Type.String({ description: "A Slack message permalink, for action=resolve." })),
@@ -786,6 +870,12 @@ const schema = Type.Object({
   ),
   text: Type.Optional(Type.String({ description: "Message body for post/reply." })),
   emoji: Type.Optional(Type.String({ description: "Reaction emoji name (no colons), e.g. thumbsup. For react." })),
+  file: Type.Optional(
+    Type.String({ description: "For download: Slack file id (F…, shown as [F…] next to 📎 in messages) or a files.slack.com URL." }),
+  ),
+  save_to: Type.Optional(Type.String({ description: "For download: directory to save into (default: system temp dir)." })),
+  file_path: Type.Optional(Type.String({ description: "For upload: local path of the file to send." })),
+  title: Type.Optional(Type.String({ description: "For upload: display title (default: file name)." })),
   limit: Type.Optional(Type.Number({ description: "Max items for history/search/channels/mentions (default 30)." })),
   oldest: Type.Optional(Type.String({ description: "history: only messages after this ts or ISO date." })),
   confirm_token: Type.Optional(
@@ -840,16 +930,20 @@ Read actions run immediately:
   channels  — {query?} list channels (optionally name-filtered)
   users     — {query?} list/lookup people
   mentions  — {limit} recent messages that @-mention the user
+  download  — {file:"F0123ABCD" | "https://files.slack.com/…", save_to?} fetch an attachment (photo, video, document). File ids appear as [F…] next to 📎 in history/thread/resolve output. Images and text files are returned inline; video/pdf/office files are saved and the path is returned (use bash tools like ffmpeg/pdftotext to inspect).
 
-Write actions (post, reply, react) are preview-first: the call returns the resolved payload plus a one-time confirm_token and sends nothing. In an interactive session the user instead gets a confirm dialog. Posting happens as the user's own identity in a real workspace — never write without explicit approval.
+  (upload is a write action: {channel, file_path, text?, ts?, title?} sends a local file, optionally into thread ts, with an optional comment.)
+
+Write actions (post, reply, react, upload) are preview-first: the call returns the resolved payload plus a one-time confirm_token and sends nothing. In an interactive session the user instead gets a confirm dialog. Posting happens as the user's own identity in a real workspace — never write without explicit approval.
 
 Mentions: write @name, @here, @channel and #channel as ordinary text in the message body. The tool rewrites them into real Slack mention markup (<@U…>, <!here>, <#C…>) before sending, so the person is actually notified — do NOT hand-write that markup and do not ask the user for a Slack user id. Handles, display names, first.last and quoted full names (@"Ana Silva") resolve, as do user groups (@design). A name that does not match exactly, or matches two people, is left as literal text and listed in the preview as NOT linked. Code spans/fences and existing <@U…> markup are never touched.
 
 Example: user pastes a thread link and says "log this as a bug" -> slack {action:"resolve", link:"…"} to read it, then hand the content to the jira tool.`,
-    promptSnippet: "Slack: read/search/resolve-thread + preview-gated post/reply/react, acting as the user",
+    promptSnippet: "Slack: read/search/resolve-thread + preview-gated post/reply/react/upload, download attachments, acting as the user",
     promptGuidelines: [
       "Use slack {action:'resolve', link} whenever the user pastes a Slack message/thread URL — it returns the whole thread with real names, far better than asking them to copy-paste it.",
       "slack write actions (post, reply, react) act as the user in a real, human-visible workspace: call the action once with full parameters and let the tool handle approval — interactive sessions show a confirm dialog; non-interactive returns a preview + confirm_token to relay, then repeat the identical call with the token after the user approves. Never invent or reuse a token, never write twice in one turn.",
+      "To read a Slack attachment (photo, video, document) call slack {action:'download', file:'F…'} using the id shown in brackets after 📎; images and text come back inline, other types are saved to disk and the path is returned.",
       "When a slack result ends with slack_status: preview_pending_approval, nothing was posted — relay the preview and wait; do not report success or retry.",
       "When a slack result ends with slack_status: auth_error, tell the user their SLACK_TOKEN/SLACK_COOKIE are expired and must be re-copied from a fresh Slack web session; do not retry.",
       "Prefer slack {action:'search'} or {action:'mentions'} over asking the user to find a message; use Slack search operators (from:, in:, before:, after:) in query.",
@@ -873,6 +967,14 @@ Example: user pastes a thread link and says "log this as a bug" -> slack {action
           : fin(apiErr(method, r), "error");
 
       const lim = Math.max(1, Math.min(params.limit ?? 30, MAX_RENDER));
+      const finBlocks = (blocks: Block[], status: string) => {
+        const out = [...blocks];
+        const first = out.findIndex((b) => b.type === "text");
+        const note = `\n\nslack_status: ${status}`;
+        if (first >= 0) (out[first] as any).text += note;
+        else out.push({ type: "text", text: note.trim() });
+        return { content: out, details: { status }, isError: false };
+      };
 
       try {
         switch (params.action) {
@@ -1012,7 +1114,30 @@ Example: user pastes a thread link and says "log this as a bug" -> slack {action
             );
           }
 
+          case "download": {
+            if (!params.file) return fin("download needs `file` (a Slack file id like F0123ABCD, or a files.slack.com URL).", "error");
+            let url = params.file.trim();
+            let name = "";
+            let mime: string | undefined;
+            if (!/^https?:/i.test(url)) {
+              if (!/^F[A-Z0-9]+$/.test(url)) return fin(`Not a Slack file id or URL: ${url}`, "error");
+              const info = await call(creds, "files.info", { file: url }, signal);
+              if (!info.ok) return authFail(info, "files.info");
+              const f = info.file ?? {};
+              url = f.url_private_download || f.url_private;
+              if (!url) return fin(`File ${params.file} has no downloadable URL (external/hosted elsewhere? permalink: ${f.permalink ?? "?"}).`, "error");
+              name = f.name || f.title || params.file;
+              mime = f.mimetype;
+            }
+            const got = await fetchFile(creds, url, signal);
+            if ("error" in got) return fin(got.error, "error");
+            if (!name) name = decodeURIComponent(new URL(url).pathname.split("/").pop() || "file");
+            const saved = saveBuffer(got.buf, safeName(name), "pi-slack-files", params.save_to);
+            return finBlocks(describeFile(saved, name, mime || got.contentType.split(";")[0], got.buf.length), "ok");
+          }
+
           /* ---------------------------------------------------------- writes */
+          case "upload":
           case "post":
           case "reply":
           case "react": {
@@ -1022,6 +1147,11 @@ Example: user pastes a thread link and says "log this as a bug" -> slack {action
             const token = tokenFor(params.action, plan.payload);
             const execApproved = async () => {
               pending.delete(token);
+              if (plan.run) {
+                const u = await plan.run();
+                if (!u.ok) return fin(`${plan.successNote} FAILED — nothing changed.\n\n${u.error}`, "error");
+                return fin(`${plan.successNote}.\n${u.line}`, "ok");
+              }
               const r = await call(creds, plan.method, plan.args, signal);
               if (!r.ok) return fin(`${plan.successNote} FAILED — nothing changed.\n\n${apiErr(plan.method, r)}`, "error");
               return fin(`${plan.successNote}.\n${plan.resultLine(r)}`, "ok");
@@ -1094,6 +1224,8 @@ type WritePlan = {
   previewLines: string[];
   successNote: string;
   resultLine: (r: ApiResult) => string;
+  /** Custom executor (multi-step flows such as file upload). Overrides method/args. */
+  run?: () => Promise<{ ok: true; line: string } | { ok: false; error: string }>;
 };
 
 async function buildWritePlan(
@@ -1114,6 +1246,38 @@ async function buildWritePlan(
       previewLines: [`React :${emoji}: on message ${params.ts} in ${params.channel} (${chan}).`],
       successNote: `Reacted :${emoji}:`,
       resultLine: () => `on ${params.ts} in ${params.channel}`,
+    };
+  }
+
+  if (params.action === "upload") {
+    if (!params.channel || !params.file_path) return { error: "upload needs `channel` and `file_path`." };
+    const f = readForUpload(params.file_path);
+    if ("error" in f) return { error: f.error };
+    const chan = await resolveChannel(creds, params.channel, signal);
+    if (!chan) return { error: `Channel not found: ${params.channel}` };
+    const comment = params.text ? (await linkMentions(creds, params.text, chan, signal)).text : undefined;
+    const name = f.name;
+    return {
+      method: "files.completeUploadExternal",
+      args: {},
+      payload: { channel: chan, thread_ts: params.ts, path: f.path, size: f.buf.length, comment },
+      previewLines: [
+        `Upload:   ${f.path} (${fmtSize(f.buf.length)})`,
+        `Channel:  ${params.channel} (${chan})`,
+        params.ts ? `Thread:   under ${params.ts}` : `Post:     new message in channel`,
+        `Sent as:  YOU (your Slack identity)`,
+        ...(comment ? ["Comment:", comment.slice(0, 1500)] : []),
+      ],
+      successNote: "File uploaded",
+      resultLine: () => "",
+      run: async () => {
+        const u = await uploadFile(
+          creds,
+          { path: f.path, name, title: params.title, channel: chan, thread_ts: params.ts, comment },
+          signal,
+        );
+        return u.ok ? { ok: true, line: `file ${u.id}${u.permalink ? ` ${u.permalink}` : ""} in ${params.channel}` } : u;
+      },
     };
   }
 

@@ -189,3 +189,6 @@ When creating git commits, ALWAYS follow the Conventional Commits specification 
     - Mention specific technologies, services, or key classes when relevant (e.g., "Amazon RDS PostgreSQL 16", "ServerEnvironment enum").
     - Keep bullets concise, clear, and professional.
 
+# 3 Tool calling (Pi harness only)
+
+Instead of `bash` tool you have to use `process` tool. It is a safer way. 

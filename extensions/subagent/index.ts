@@ -2,6 +2,7 @@ import {
 	CONFIG_DIR_NAME,
 	type AgentToolResult,
 	type ExtensionAPI,
+	type ExtensionContext,
 	getAgentDir,
 	getMarkdownTheme,
 	withFileMutationQueue,
@@ -9,7 +10,7 @@ import {
 import { Container, Markdown, Spacer, Text } from "@earendil-works/pi-tui";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import { StringEnum } from "@earendil-works/pi-ai";
-import { Type } from "typebox";
+import { Type, type Static } from "typebox";
 import { spawn } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
@@ -533,6 +534,13 @@ const SubagentParams = Type.Object({
 		Type.Boolean({ description: "Prompt before running project-local agents. Default: true.", default: true }),
 	),
 	cwd: Type.Optional(Type.String({ description: "Working directory for the agent process (single mode)" })),
+	background: Type.Optional(
+		Type.Boolean({
+			description:
+				"Run detached: return immediately with a job id and keep the conversation free. The result is delivered later as a follow-up message. Prefer true for long tasks when the user may want to keep chatting.",
+			default: false,
+		}),
+	),
 });
 
 /**
@@ -559,6 +567,403 @@ function uiExclusive<T>(fn: () => Promise<T>): Promise<T> {
 }
 
 export default function (pi: ExtensionAPI) {
+	let bgCounter = 0;
+	const backgroundJobs = new Map<string, AbortController>();
+	pi.on("session_shutdown", () => {
+		for (const c of backgroundJobs.values()) c.abort();
+		backgroundJobs.clear();
+	});
+
+	const runSubagent = async (
+		params: Static<typeof SubagentParams>,
+		signal: AbortSignal | undefined,
+		onUpdate: OnUpdateCallback | undefined,
+		ctx: ExtensionContext,
+	): Promise<AgentToolResult<SubagentDetails>> => {
+		const agentScope: AgentScope = params.agentScope ?? "user";
+		const discovery = discoverAgents(ctx.cwd, agentScope);
+		const agents = discovery.agents;
+		const confirmProjectAgents = params.confirmProjectAgents ?? true;
+
+		const hasChain = (params.chain?.length ?? 0) > 0;
+		const hasTasks = (params.tasks?.length ?? 0) > 0;
+		const hasSingle = Boolean(params.agent && params.task);
+		const hasLoop = (params.loop?.steps?.length ?? 0) > 0;
+		const modeCount = Number(hasChain) + Number(hasTasks) + Number(hasSingle) + Number(hasLoop);
+		const requestedMode: SubagentMode = hasLoop ? "loop" : hasChain ? "chain" : hasTasks ? "parallel" : "single";
+
+		const makeDetails =
+			(mode: SubagentMode, loop?: LoopInfo) =>
+			(results: SingleResult[]): SubagentDetails => ({
+				mode,
+				agentScope,
+				projectAgentsDir: discovery.projectAgentsDir,
+				results,
+				...(loop ? { loop: { ...loop } } : {}),
+			});
+
+		if (modeCount !== 1) {
+			const available = agents.map((a) => `${a.name} (${a.source})`).join(", ") || "none";
+			return {
+				content: [
+					{
+						type: "text",
+						text: `Invalid parameters. Provide exactly one mode (agent+task, tasks, chain, or loop).\nAvailable agents: ${available}`,
+					},
+				],
+				details: makeDetails("single")([]),
+				isError: true,
+			};
+		}
+
+		// Validate loop parameters BEFORE any approval dialog or agent run.
+		let loopUntil: RegExp | undefined;
+		let loopMaxIterations = DEFAULT_LOOP_ITERATIONS;
+		if (hasLoop && params.loop) {
+			const loopError = (text: string) => ({
+				content: [{ type: "text" as const, text: `Invalid loop: ${text}` }],
+				details: makeDetails("loop")([]),
+				isError: true,
+			});
+			if (params.loop.steps.length > MAX_LOOP_STEPS)
+				return loopError(`too many steps (${params.loop.steps.length}). Max is ${MAX_LOOP_STEPS}.`);
+			const requested = params.loop.maxIterations ?? DEFAULT_LOOP_ITERATIONS;
+			if (!Number.isInteger(requested) || requested < 1 || requested > MAX_LOOP_ITERATIONS)
+				return loopError(`maxIterations must be an integer 1..${MAX_LOOP_ITERATIONS} (got ${requested}).`);
+			loopMaxIterations = requested;
+			if (params.loop.until !== undefined && params.loop.until.trim() !== "") {
+				try {
+					loopUntil = new RegExp(params.loop.until, "m");
+				} catch (e) {
+					return loopError(`until is not a valid JavaScript regex: ${(e as Error).message}`);
+				}
+				// A pattern that matches "" (e.g. ".*", "^", "x?") matches EVERY output, including an
+				// empty one, so the loop would "succeed" after one pass without checking anything.
+				if (loopUntil.test(""))
+					return loopError(
+						`until /${params.loop.until}/ matches an empty string, so it would stop after the first iteration regardless of the output. Use a concrete marker such as "^APPROVED$".`,
+					);
+			}
+		}
+
+		if ((agentScope === "project" || agentScope === "both") && confirmProjectAgents && ctx.hasUI) {
+			const requestedAgentNames = new Set<string>();
+			if (params.chain) for (const step of params.chain) requestedAgentNames.add(step.agent);
+			if (params.tasks) for (const t of params.tasks) requestedAgentNames.add(t.agent);
+			if (params.agent) requestedAgentNames.add(params.agent);
+			if (params.loop) for (const step of params.loop.steps) requestedAgentNames.add(step.agent);
+
+			const projectAgentsRequested = Array.from(requestedAgentNames)
+				.map((name) => agents.find((a) => a.name === name))
+				.filter((a): a is AgentConfig => a?.source === "project");
+
+			if (projectAgentsRequested.length > 0) {
+				const names = projectAgentsRequested.map((a) => a.name).join(", ");
+				const dir = discovery.projectAgentsDir ?? "(unknown)";
+				const ok = await uiExclusive(() =>
+					ctx.ui.confirm(
+						"Run project-local agents?",
+						`Agents: ${names}\nSource: ${dir}\n\nProject agents are repo-controlled. Only continue for trusted repositories.`,
+					),
+				);
+				if (!ok)
+					return {
+						content: [{ type: "text", text: "Canceled: project-local agents not approved." }],
+						details: makeDetails(requestedMode)([]),
+					};
+			}
+		}
+
+		if (hasLoop && params.loop) {
+			const steps = params.loop.steps;
+			const loopInfo: LoopInfo = {
+				maxIterations: loopMaxIterations,
+				iterationsRun: 0,
+				stepsPerIteration: steps.length,
+				until: loopUntil ? params.loop.until : undefined,
+			};
+			const loopDetails = (results: SingleResult[]) => makeDetails("loop", loopInfo)(results);
+			const results: SingleResult[] = [];
+			let previousOutput = "";
+			let previousIterationOutputs: string[] | undefined;
+			let lastIterationOutputs: string[] = [];
+			let stopReason: LoopStopReason = "max-iterations";
+
+			for (let iter = 1; iter <= loopMaxIterations; iter++) {
+				loopInfo.iterationsRun = iter;
+				const iterationOutputs: string[] = [];
+				for (let s = 0; s < steps.length; s++) {
+					const step = steps[s];
+					const task = fillPlaceholders(step.task, {
+						previous: previousOutput,
+						iteration: String(iter),
+						maxIterations: String(loopMaxIterations),
+					});
+					const loopUpdate: OnUpdateCallback | undefined = onUpdate
+						? (partial) => {
+								const current = partial.details?.results[0];
+								if (current) {
+									current.iteration = iter;
+									onUpdate({
+										content: [
+											{
+												type: "text",
+												text: `Loop iteration ${iter}/${loopMaxIterations}, step ${s + 1}/${steps.length} (${step.agent}) running...`,
+											},
+										],
+										details: loopDetails([...results, current]),
+									});
+								}
+							}
+						: undefined;
+
+					const result = await runSingleAgent(
+						ctx.cwd,
+						agents,
+						step.agent,
+						task,
+						step.cwd,
+						s + 1,
+						signal,
+						loopUpdate,
+						loopDetails,
+						{ model: step.model, thinking: step.thinking },
+					);
+					result.iteration = iter;
+					// A loop can run up to MAX_LOOP_ITERATIONS x MAX_LOOP_STEPS agents and details are
+					// persisted in the session. Tool-result messages are never rendered (only assistant
+					// text/tool calls are), so drop them from finished runs to keep the session small.
+					result.messages = result.messages.filter((m) => m.role !== "toolResult");
+					results.push(result);
+
+					if (isFailedResult(result)) {
+						loopInfo.stopReason = "step-failed";
+						return {
+							content: [
+								{
+									type: "text",
+									text: `Loop stop=step-failed at iteration ${iter}/${loopMaxIterations}, step ${s + 1} (${step.agent}): ${getResultOutput(result)}`,
+								},
+							],
+							details: loopDetails(results),
+							isError: true,
+						};
+					}
+					previousOutput = getFinalOutput(result.messages);
+					iterationOutputs.push(previousOutput);
+				}
+				lastIterationOutputs = iterationOutputs;
+
+				if (loopUntil && loopUntil.test(previousOutput)) {
+					stopReason = "until-matched";
+					break;
+				}
+				// Stuck detection (only while waiting for a condition): every step produced exactly
+				// the same output as in the previous iteration, so another pass is very unlikely to
+				// change anything. Without `until` the caller asked for N passes explicitly; honor it.
+				if (
+					loopUntil &&
+					previousIterationOutputs &&
+					previousIterationOutputs.every((o, i) => o.trim() === (iterationOutputs[i] ?? "").trim())
+				) {
+					stopReason = "no-progress";
+					break;
+				}
+				previousIterationOutputs = iterationOutputs;
+			}
+			loopInfo.stopReason = stopReason;
+
+			const n = loopInfo.iterationsRun;
+			let header: string;
+			if (stopReason === "until-matched") {
+				header = `Loop stop=until-matched: /${params.loop.until}/m matched the output of ${steps[steps.length - 1].agent} at iteration ${n}/${loopMaxIterations}.`;
+			} else if (stopReason === "no-progress") {
+				header = `Loop stop=no-progress: iteration ${n} produced exactly the same outputs as iteration ${n - 1}; /${params.loop.until}/m never matched. Condition NOT met.`;
+			} else if (loopUntil) {
+				header = `Loop stop=max-iterations: ran all ${n}/${loopMaxIterations} iterations and /${params.loop.until}/m never matched. Condition NOT met - the result below is not approved/finished.`;
+			} else {
+				header = `Loop stop=max-iterations: ran ${n}/${loopMaxIterations} iterations (no until condition given).`;
+			}
+			header += ` Agent runs: ${results.length}.`;
+
+			const finalSections = lastIterationOutputs.map(
+				(out, i) =>
+					`### Iteration ${n}, step ${i + 1} [${steps[i].agent}]\n\n${truncateParallelOutput(out || "(no output)")}`,
+			);
+			return {
+				content: [{ type: "text", text: `${header}\n\n${finalSections.join("\n\n---\n\n")}` }],
+				details: loopDetails(results),
+			};
+		}
+
+		if (params.chain && params.chain.length > 0) {
+			const results: SingleResult[] = [];
+			let previousOutput = "";
+
+			for (let i = 0; i < params.chain.length; i++) {
+				const step = params.chain[i];
+				const taskWithContext = step.task.replace(/\{previous\}/g, () => previousOutput);
+
+				const chainUpdate: OnUpdateCallback | undefined = onUpdate
+					? (partial) => {
+							const currentResult = partial.details?.results[0];
+							if (currentResult) {
+								const allResults = [...results, currentResult];
+								onUpdate({
+									content: partial.content,
+									details: makeDetails("chain")(allResults),
+								});
+							}
+						}
+					: undefined;
+
+				const result = await runSingleAgent(
+					ctx.cwd,
+					agents,
+					step.agent,
+					taskWithContext,
+					step.cwd,
+					i + 1,
+					signal,
+					chainUpdate,
+					makeDetails("chain"),
+					{ model: step.model, thinking: step.thinking },
+				);
+				results.push(result);
+
+				const isError = isFailedResult(result);
+				if (isError) {
+					const errorMsg = getResultOutput(result);
+					return {
+						content: [{ type: "text", text: `Chain stopped at step ${i + 1} (${step.agent}): ${errorMsg}` }],
+						details: makeDetails("chain")(results),
+						isError: true,
+					};
+				}
+				previousOutput = getFinalOutput(result.messages);
+			}
+			return {
+				content: [{ type: "text", text: getFinalOutput(results[results.length - 1].messages) || "(no output)" }],
+				details: makeDetails("chain")(results),
+			};
+		}
+
+		if (params.tasks && params.tasks.length > 0) {
+			if (params.tasks.length > MAX_PARALLEL_TASKS)
+				return {
+					content: [
+						{
+							type: "text",
+							text: `Too many parallel tasks (${params.tasks.length}). Max is ${MAX_PARALLEL_TASKS}.`,
+						},
+					],
+					details: makeDetails("parallel")([]),
+				};
+
+			const allResults: SingleResult[] = new Array(params.tasks.length);
+
+			for (let i = 0; i < params.tasks.length; i++) {
+				allResults[i] = {
+					agent: params.tasks[i].agent,
+					agentSource: "unknown",
+					task: params.tasks[i].task,
+					exitCode: -1,
+					messages: [],
+					stderr: "",
+					usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 0, turns: 0 },
+				};
+			}
+
+			const emitParallelUpdate = () => {
+				if (onUpdate) {
+					const running = allResults.filter((r) => r.exitCode === -1).length;
+					const done = allResults.filter((r) => r.exitCode !== -1).length;
+					onUpdate({
+						content: [
+							{ type: "text", text: `Parallel: ${done}/${allResults.length} done, ${running} running...` },
+						],
+						details: makeDetails("parallel")([...allResults]),
+					});
+				}
+			};
+
+			const results = await mapWithConcurrencyLimit(params.tasks, MAX_CONCURRENCY, async (t, index) => {
+				const result = await runSingleAgent(
+					ctx.cwd,
+					agents,
+					t.agent,
+					t.task,
+					t.cwd,
+					undefined,
+					signal,
+					(partial) => {
+						if (partial.details?.results[0]) {
+							allResults[index] = partial.details.results[0];
+							emitParallelUpdate();
+						}
+					},
+					makeDetails("parallel"),
+					{ model: t.model, thinking: t.thinking },
+				);
+				allResults[index] = result;
+				emitParallelUpdate();
+				return result;
+			});
+
+			const successCount = results.filter((r) => !isFailedResult(r)).length;
+			const summaries = results.map((r) => {
+				const output = truncateParallelOutput(getResultOutput(r));
+				const status = isFailedResult(r)
+					? `failed${r.stopReason && r.stopReason !== "end" ? ` (${r.stopReason})` : ""}`
+					: "completed";
+				return `### [${r.agent}] ${status}\n\n${output}`;
+			});
+			return {
+				content: [
+					{
+						type: "text",
+						text: `Parallel: ${successCount}/${results.length} succeeded\n\n${summaries.join("\n\n---\n\n")}`,
+					},
+				],
+				details: makeDetails("parallel")(results),
+			};
+		}
+
+		if (params.agent && params.task) {
+			const result = await runSingleAgent(
+				ctx.cwd,
+				agents,
+				params.agent,
+				params.task,
+				params.cwd,
+				undefined,
+				signal,
+				onUpdate,
+				makeDetails("single"),
+				{ model: params.model, thinking: params.thinking },
+			);
+			const isError = isFailedResult(result);
+			if (isError) {
+				const errorMsg = getResultOutput(result);
+				return {
+					content: [{ type: "text", text: `Agent ${result.stopReason || "failed"}: ${errorMsg}` }],
+					details: makeDetails("single")([result]),
+					isError: true,
+				};
+			}
+			return {
+					content: [{ type: "text", text: getFinalOutput(result.messages) || "(no output)" }],
+					details: makeDetails("single")([result]),
+			};
+		}
+
+		const available = agents.map((a) => `${a.name} (${a.source})`).join(", ") || "none";
+		return {
+			content: [{ type: "text", text: `Invalid parameters. Available agents: ${available}` }],
+			details: makeDetails("single")([]),
+		};
+	};
+
 	pi.registerTool({
 		name: "subagent",
 		label: "Subagent",
@@ -573,6 +978,7 @@ export default function (pi: ExtensionAPI) {
 			`To enable project-local agents in ${CONFIG_DIR_NAME}/agents, set agentScope: "both" (or "project").`,
 		].join(" "),
 		promptGuidelines: [
+			"Prefer subagent background:true for long-running delegated work: the call returns immediately with a job id so the user can keep talking to you. Do not wait or poll; the result arrives later as a follow-up message. Use the default foreground mode only when you need the result right now to continue.",
 			"Use subagent loop mode for iterate-until-done work (implement - review - fix until approved, or fix - test until green); use subagent chain when the steps should run exactly once.",
 			"With subagent loop, tell the last step's agent in its task to print a marker on its own line only when satisfied, and pass an anchored until regex such as \"^APPROVED$\"; an unanchored word also matches negations like \"NOT APPROVED\".",
 			"Read the first line of a subagent loop result: only \"stop=until-matched\" means the condition was met; \"max-iterations\" or \"no-progress\" means the work is NOT approved/finished - do not report it as done.",
@@ -580,387 +986,40 @@ export default function (pi: ExtensionAPI) {
 		parameters: SubagentParams,
 
 		async execute(_toolCallId, params, signal, onUpdate, ctx) {
-			const agentScope: AgentScope = params.agentScope ?? "user";
-			const discovery = discoverAgents(ctx.cwd, agentScope);
-			const agents = discovery.agents;
-			const confirmProjectAgents = params.confirmProjectAgents ?? true;
+			if (!params.background) return runSubagent(params, signal, onUpdate, ctx);
 
-			const hasChain = (params.chain?.length ?? 0) > 0;
-			const hasTasks = (params.tasks?.length ?? 0) > 0;
-			const hasSingle = Boolean(params.agent && params.task);
-			const hasLoop = (params.loop?.steps?.length ?? 0) > 0;
-			const modeCount = Number(hasChain) + Number(hasTasks) + Number(hasSingle) + Number(hasLoop);
-			const requestedMode: SubagentMode = hasLoop ? "loop" : hasChain ? "chain" : hasTasks ? "parallel" : "single";
-
-			const makeDetails =
-				(mode: SubagentMode, loop?: LoopInfo) =>
-				(results: SingleResult[]): SubagentDetails => ({
-					mode,
-					agentScope,
-					projectAgentsDir: discovery.projectAgentsDir,
-					results,
-					...(loop ? { loop: { ...loop } } : {}),
-				});
-
-			if (modeCount !== 1) {
-				const available = agents.map((a) => `${a.name} (${a.source})`).join(", ") || "none";
-				return {
-					content: [
-						{
-							type: "text",
-							text: `Invalid parameters. Provide exactly one mode (agent+task, tasks, chain, or loop).\nAvailable agents: ${available}`,
-						},
-					],
-					details: makeDetails("single")([]),
-					isError: true,
-				};
-			}
-
-			// Validate loop parameters BEFORE any approval dialog or agent run.
-			let loopUntil: RegExp | undefined;
-			let loopMaxIterations = DEFAULT_LOOP_ITERATIONS;
-			if (hasLoop && params.loop) {
-				const loopError = (text: string) => ({
-					content: [{ type: "text" as const, text: `Invalid loop: ${text}` }],
-					details: makeDetails("loop")([]),
-					isError: true,
-				});
-				if (params.loop.steps.length > MAX_LOOP_STEPS)
-					return loopError(`too many steps (${params.loop.steps.length}). Max is ${MAX_LOOP_STEPS}.`);
-				const requested = params.loop.maxIterations ?? DEFAULT_LOOP_ITERATIONS;
-				if (!Number.isInteger(requested) || requested < 1 || requested > MAX_LOOP_ITERATIONS)
-					return loopError(`maxIterations must be an integer 1..${MAX_LOOP_ITERATIONS} (got ${requested}).`);
-				loopMaxIterations = requested;
-				if (params.loop.until !== undefined && params.loop.until.trim() !== "") {
-					try {
-						loopUntil = new RegExp(params.loop.until, "m");
-					} catch (e) {
-						return loopError(`until is not a valid JavaScript regex: ${(e as Error).message}`);
-					}
-					// A pattern that matches "" (e.g. ".*", "^", "x?") matches EVERY output, including an
-					// empty one, so the loop would "succeed" after one pass without checking anything.
-					if (loopUntil.test(""))
-						return loopError(
-							`until /${params.loop.until}/ matches an empty string, so it would stop after the first iteration regardless of the output. Use a concrete marker such as "^APPROVED$".`,
-						);
-				}
-			}
-
-			if ((agentScope === "project" || agentScope === "both") && confirmProjectAgents && ctx.hasUI) {
-				const requestedAgentNames = new Set<string>();
-				if (params.chain) for (const step of params.chain) requestedAgentNames.add(step.agent);
-				if (params.tasks) for (const t of params.tasks) requestedAgentNames.add(t.agent);
-				if (params.agent) requestedAgentNames.add(params.agent);
-				if (params.loop) for (const step of params.loop.steps) requestedAgentNames.add(step.agent);
-
-				const projectAgentsRequested = Array.from(requestedAgentNames)
-					.map((name) => agents.find((a) => a.name === name))
-					.filter((a): a is AgentConfig => a?.source === "project");
-
-				if (projectAgentsRequested.length > 0) {
-					const names = projectAgentsRequested.map((a) => a.name).join(", ");
-					const dir = discovery.projectAgentsDir ?? "(unknown)";
-					const ok = await uiExclusive(() =>
-						ctx.ui.confirm(
-							"Run project-local agents?",
-							`Agents: ${names}\nSource: ${dir}\n\nProject agents are repo-controlled. Only continue for trusted repositories.`,
-						),
+			// Background: return right away so the orchestrator stays free to talk to the user.
+			// The result is delivered later as a follow-up message that triggers a turn.
+			const jobId = `bg-${++bgCounter}`;
+			const controller = new AbortController();
+			backgroundJobs.set(jobId, controller);
+			const label = params.agent ?? (params.tasks ? "parallel" : params.chain ? "chain" : params.loop ? "loop" : "?");
+			void runSubagent({ ...params, background: false }, controller.signal, undefined, ctx)
+				.then(
+					(r) => ({ r, err: undefined as string | undefined }),
+					(e) => ({ r: undefined, err: (e as Error)?.message ?? String(e) }),
+				)
+				.then(({ r, err }) => {
+					backgroundJobs.delete(jobId);
+					if (controller.signal.aborted) return;
+					const text = err
+						? `Background subagent ${jobId} (${label}) crashed: ${err}`
+						: `Background subagent ${jobId} (${label}) ${r?.isError ? "FAILED" : "finished"}:\n\n${(r?.content ?? [])
+								.map((c) => (c.type === "text" ? c.text : ""))
+								.join("\n")}`;
+					pi.sendMessage(
+						{ customType: "subagent-background-result", content: text, display: true, details: { jobId } },
+						{ triggerTurn: true, deliverAs: "followUp" },
 					);
-					if (!ok)
-						return {
-							content: [{ type: "text", text: "Canceled: project-local agents not approved." }],
-							details: makeDetails(requestedMode)([]),
-						};
-				}
-			}
-
-			if (hasLoop && params.loop) {
-				const steps = params.loop.steps;
-				const loopInfo: LoopInfo = {
-					maxIterations: loopMaxIterations,
-					iterationsRun: 0,
-					stepsPerIteration: steps.length,
-					until: loopUntil ? params.loop.until : undefined,
-				};
-				const loopDetails = (results: SingleResult[]) => makeDetails("loop", loopInfo)(results);
-				const results: SingleResult[] = [];
-				let previousOutput = "";
-				let previousIterationOutputs: string[] | undefined;
-				let lastIterationOutputs: string[] = [];
-				let stopReason: LoopStopReason = "max-iterations";
-
-				for (let iter = 1; iter <= loopMaxIterations; iter++) {
-					loopInfo.iterationsRun = iter;
-					const iterationOutputs: string[] = [];
-					for (let s = 0; s < steps.length; s++) {
-						const step = steps[s];
-						const task = fillPlaceholders(step.task, {
-							previous: previousOutput,
-							iteration: String(iter),
-							maxIterations: String(loopMaxIterations),
-						});
-						const loopUpdate: OnUpdateCallback | undefined = onUpdate
-							? (partial) => {
-									const current = partial.details?.results[0];
-									if (current) {
-										current.iteration = iter;
-										onUpdate({
-											content: [
-												{
-													type: "text",
-													text: `Loop iteration ${iter}/${loopMaxIterations}, step ${s + 1}/${steps.length} (${step.agent}) running...`,
-												},
-											],
-											details: loopDetails([...results, current]),
-										});
-									}
-								}
-							: undefined;
-
-						const result = await runSingleAgent(
-							ctx.cwd,
-							agents,
-							step.agent,
-							task,
-							step.cwd,
-							s + 1,
-							signal,
-							loopUpdate,
-							loopDetails,
-							{ model: step.model, thinking: step.thinking },
-						);
-						result.iteration = iter;
-						// A loop can run up to MAX_LOOP_ITERATIONS x MAX_LOOP_STEPS agents and details are
-						// persisted in the session. Tool-result messages are never rendered (only assistant
-						// text/tool calls are), so drop them from finished runs to keep the session small.
-						result.messages = result.messages.filter((m) => m.role !== "toolResult");
-						results.push(result);
-
-						if (isFailedResult(result)) {
-							loopInfo.stopReason = "step-failed";
-							return {
-								content: [
-									{
-										type: "text",
-										text: `Loop stop=step-failed at iteration ${iter}/${loopMaxIterations}, step ${s + 1} (${step.agent}): ${getResultOutput(result)}`,
-									},
-								],
-								details: loopDetails(results),
-								isError: true,
-							};
-						}
-						previousOutput = getFinalOutput(result.messages);
-						iterationOutputs.push(previousOutput);
-					}
-					lastIterationOutputs = iterationOutputs;
-
-					if (loopUntil && loopUntil.test(previousOutput)) {
-						stopReason = "until-matched";
-						break;
-					}
-					// Stuck detection (only while waiting for a condition): every step produced exactly
-					// the same output as in the previous iteration, so another pass is very unlikely to
-					// change anything. Without `until` the caller asked for N passes explicitly; honor it.
-					if (
-						loopUntil &&
-						previousIterationOutputs &&
-						previousIterationOutputs.every((o, i) => o.trim() === (iterationOutputs[i] ?? "").trim())
-					) {
-						stopReason = "no-progress";
-						break;
-					}
-					previousIterationOutputs = iterationOutputs;
-				}
-				loopInfo.stopReason = stopReason;
-
-				const n = loopInfo.iterationsRun;
-				let header: string;
-				if (stopReason === "until-matched") {
-					header = `Loop stop=until-matched: /${params.loop.until}/m matched the output of ${steps[steps.length - 1].agent} at iteration ${n}/${loopMaxIterations}.`;
-				} else if (stopReason === "no-progress") {
-					header = `Loop stop=no-progress: iteration ${n} produced exactly the same outputs as iteration ${n - 1}; /${params.loop.until}/m never matched. Condition NOT met.`;
-				} else if (loopUntil) {
-					header = `Loop stop=max-iterations: ran all ${n}/${loopMaxIterations} iterations and /${params.loop.until}/m never matched. Condition NOT met - the result below is not approved/finished.`;
-				} else {
-					header = `Loop stop=max-iterations: ran ${n}/${loopMaxIterations} iterations (no until condition given).`;
-				}
-				header += ` Agent runs: ${results.length}.`;
-
-				const finalSections = lastIterationOutputs.map(
-					(out, i) =>
-						`### Iteration ${n}, step ${i + 1} [${steps[i].agent}]\n\n${truncateParallelOutput(out || "(no output)")}`,
-				);
-				return {
-					content: [{ type: "text", text: `${header}\n\n${finalSections.join("\n\n---\n\n")}` }],
-					details: loopDetails(results),
-				};
-			}
-
-			if (params.chain && params.chain.length > 0) {
-				const results: SingleResult[] = [];
-				let previousOutput = "";
-
-				for (let i = 0; i < params.chain.length; i++) {
-					const step = params.chain[i];
-					const taskWithContext = step.task.replace(/\{previous\}/g, () => previousOutput);
-
-					const chainUpdate: OnUpdateCallback | undefined = onUpdate
-						? (partial) => {
-								const currentResult = partial.details?.results[0];
-								if (currentResult) {
-									const allResults = [...results, currentResult];
-									onUpdate({
-										content: partial.content,
-										details: makeDetails("chain")(allResults),
-									});
-								}
-							}
-						: undefined;
-
-					const result = await runSingleAgent(
-						ctx.cwd,
-						agents,
-						step.agent,
-						taskWithContext,
-						step.cwd,
-						i + 1,
-						signal,
-						chainUpdate,
-						makeDetails("chain"),
-						{ model: step.model, thinking: step.thinking },
-					);
-					results.push(result);
-
-					const isError = isFailedResult(result);
-					if (isError) {
-						const errorMsg = getResultOutput(result);
-						return {
-							content: [{ type: "text", text: `Chain stopped at step ${i + 1} (${step.agent}): ${errorMsg}` }],
-							details: makeDetails("chain")(results),
-							isError: true,
-						};
-					}
-					previousOutput = getFinalOutput(result.messages);
-				}
-				return {
-					content: [{ type: "text", text: getFinalOutput(results[results.length - 1].messages) || "(no output)" }],
-					details: makeDetails("chain")(results),
-				};
-			}
-
-			if (params.tasks && params.tasks.length > 0) {
-				if (params.tasks.length > MAX_PARALLEL_TASKS)
-					return {
-						content: [
-							{
-								type: "text",
-								text: `Too many parallel tasks (${params.tasks.length}). Max is ${MAX_PARALLEL_TASKS}.`,
-							},
-						],
-						details: makeDetails("parallel")([]),
-					};
-
-				const allResults: SingleResult[] = new Array(params.tasks.length);
-
-				for (let i = 0; i < params.tasks.length; i++) {
-					allResults[i] = {
-						agent: params.tasks[i].agent,
-						agentSource: "unknown",
-						task: params.tasks[i].task,
-						exitCode: -1,
-						messages: [],
-						stderr: "",
-						usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 0, turns: 0 },
-					};
-				}
-
-				const emitParallelUpdate = () => {
-					if (onUpdate) {
-						const running = allResults.filter((r) => r.exitCode === -1).length;
-						const done = allResults.filter((r) => r.exitCode !== -1).length;
-						onUpdate({
-							content: [
-								{ type: "text", text: `Parallel: ${done}/${allResults.length} done, ${running} running...` },
-							],
-							details: makeDetails("parallel")([...allResults]),
-						});
-					}
-				};
-
-				const results = await mapWithConcurrencyLimit(params.tasks, MAX_CONCURRENCY, async (t, index) => {
-					const result = await runSingleAgent(
-						ctx.cwd,
-						agents,
-						t.agent,
-						t.task,
-						t.cwd,
-						undefined,
-						signal,
-						(partial) => {
-							if (partial.details?.results[0]) {
-								allResults[index] = partial.details.results[0];
-								emitParallelUpdate();
-							}
-						},
-						makeDetails("parallel"),
-						{ model: t.model, thinking: t.thinking },
-					);
-					allResults[index] = result;
-					emitParallelUpdate();
-					return result;
 				});
-
-				const successCount = results.filter((r) => !isFailedResult(r)).length;
-				const summaries = results.map((r) => {
-					const output = truncateParallelOutput(getResultOutput(r));
-					const status = isFailedResult(r)
-						? `failed${r.stopReason && r.stopReason !== "end" ? ` (${r.stopReason})` : ""}`
-						: "completed";
-					return `### [${r.agent}] ${status}\n\n${output}`;
-				});
-				return {
-					content: [
-						{
-							type: "text",
-							text: `Parallel: ${successCount}/${results.length} succeeded\n\n${summaries.join("\n\n---\n\n")}`,
-						},
-					],
-					details: makeDetails("parallel")(results),
-				};
-			}
-
-			if (params.agent && params.task) {
-				const result = await runSingleAgent(
-					ctx.cwd,
-					agents,
-					params.agent,
-					params.task,
-					params.cwd,
-					undefined,
-					signal,
-					onUpdate,
-					makeDetails("single"),
-					{ model: params.model, thinking: params.thinking },
-				);
-				const isError = isFailedResult(result);
-				if (isError) {
-					const errorMsg = getResultOutput(result);
-					return {
-						content: [{ type: "text", text: `Agent ${result.stopReason || "failed"}: ${errorMsg}` }],
-						details: makeDetails("single")([result]),
-						isError: true,
-					};
-				}
-				return {
-						content: [{ type: "text", text: getFinalOutput(result.messages) || "(no output)" }],
-						details: makeDetails("single")([result]),
-				};
-			}
-
-			const available = agents.map((a) => `${a.name} (${a.source})`).join(", ") || "none";
 			return {
-				content: [{ type: "text", text: `Invalid parameters. Available agents: ${available}` }],
-				details: makeDetails("single")([]),
+				content: [
+					{
+						type: "text",
+						text: `Started background subagent ${jobId} (${label}). Do NOT wait or poll for it: continue talking to the user. The result will arrive automatically as a new message when it finishes.`,
+					},
+				],
+				details: { mode: "single", agentScope: params.agentScope ?? "user", projectAgentsDir: null, results: [] } as unknown as SubagentDetails,
 			};
 		},
 
