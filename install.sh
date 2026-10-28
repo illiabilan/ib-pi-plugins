@@ -2,6 +2,7 @@
 #
 # Pi Plugins Installation Script
 # Supports global installation (~/.pi/agent) and repository-local installation (<repo>/.pi)
+# With --claude, installs the standalone tools/ as Claude Code skills (~/.claude/skills) instead
 #
 
 set -euo pipefail
@@ -90,6 +91,12 @@ CUSTOM_SKILLS_SET=false
 CUSTOM_AGENTS_SET=false
 CUSTOM_PROMPTS_SET=false
 
+CLAUDE_MODE=false        # --claude: install tools/ into Claude Code skills dir, skip Pi entirely
+SELECTED_TOOLS=()
+CUSTOM_TOOLS_SET=false
+INSTALL_SYSTEM_PROMPT=true   # --claude: import APPEND_SYSTEM_PROMPT.md into ~/.claude/CLAUDE.md
+INSTALL_STATUSLINE=true      # --claude: set statusLine in ~/.claude/settings.json to claude/statusline
+
 NPM_MODE="deps"          # "deps" (install only if dependencies exist), "all" (all package.json), "none" (skip)
 GIT_EXCLUDE=true         # Add .pi/ to .git/info/exclude on local installs
 DRY_RUN=false
@@ -130,6 +137,14 @@ discover_available_items() {
       [ -n "$item" ] && ALL_PROMPTS+=("$item")
     done < <(find "$SCRIPT_DIR/prompts" -mindepth 1 -maxdepth 1 -name "*.md" -exec basename {} .md \; | sort)
   fi
+
+  # Tools are standalone CLIs packaged as skills: tools/<tool>/{SKILL.md,script/}
+  ALL_TOOLS=()
+  if [ -d "$SCRIPT_DIR/tools" ]; then
+    while IFS= read -r item; do
+      [ -n "$item" ] && ALL_TOOLS+=("$item")
+    done < <(find "$SCRIPT_DIR/tools" -mindepth 2 -maxdepth 2 -name "SKILL.md" -exec dirname {} \; | xargs -n1 basename | sort)
+  fi
 }
 
 # -----------------------------------------------------------------------------
@@ -147,6 +162,10 @@ ${BOLD}TARGET OPTIONS:${RESET} (Choose one)
   ${CYAN}-g, --global${RESET}                Install globally into ~/.pi/agent
   ${CYAN}-l, --local <REPO_PATH>${RESET}     Install locally into <REPO_PATH>/.pi
   ${CYAN}-r, --repo <REPO_PATH>${RESET}      Alias for --local
+  ${CYAN}--claude${RESET}                    Install for Claude Code into ~/.claude (\$CLAUDE_CONFIG_DIR if set):
+                              tools/ -> skills/, claude/agents/ -> agents/ (+ read-only guard
+                              hook), the statusbar as statusLine, and an @import of
+                              APPEND_SYSTEM_PROMPT.md in CLAUDE.md. Pi is not touched.
 
 ${BOLD}INSTALLATION METHOD:${RESET}
   ${CYAN}-s, --link, --symlink${RESET}       Create symbolic links to this repo (default)
@@ -171,6 +190,11 @@ ${BOLD}COMPONENT SELECTION:${RESET}
   ${CYAN}--no-skills${RESET}                 Skip all skills
   ${CYAN}--no-agents${RESET}                 Skip all agents
   ${CYAN}--no-prompts${RESET}                Skip all prompts
+  ${CYAN}--tools [LIST]${RESET}              With --claude: comma-separated list of tools to install (default: all)
+                              (--agents/--no-agents select from claude/agents with --claude)
+  ${CYAN}--no-system-prompt${RESET}          With --claude: do not import APPEND_SYSTEM_PROMPT.md into CLAUDE.md
+  ${CYAN}--no-statusline${RESET}             With --claude: keep your current statusLine (default: replace it,
+                              the previous value is saved and restored on --uninstall)
 
 ${BOLD}NPM DEPENDENCIES:${RESET}
   ${CYAN}--npm${RESET}                       Run npm install for extensions with dependencies (default)
@@ -212,6 +236,15 @@ ${BOLD}EXAMPLES:${RESET}
 
   # Preview installation actions without executing
   ./install.sh --global --dry-run
+
+  # Claude Code: all tools as skills, all agents, system prompt import
+  ./install.sh --claude
+
+  # Only some tools, copied instead of symlinked
+  ./install.sh --claude --tools jira,slack --copy
+
+  # Remove the tools from ~/.claude/skills
+  ./install.sh --claude --uninstall
 EOF
 }
 
@@ -239,6 +272,11 @@ show_list() {
 
   printf "\n${BOLD}${CYAN}Prompts (${#ALL_PROMPTS[@]}):${RESET}\n"
   for item in "${ALL_PROMPTS[@]}"; do
+    printf "  • %s\n" "$item"
+  done
+
+  printf "\n${BOLD}${CYAN}Tools (${#ALL_TOOLS[@]}, Claude Code skills via --claude):${RESET}\n"
+  for item in "${ALL_TOOLS[@]}"; do
     printf "  • %s\n" "$item"
   done
 
@@ -372,6 +410,31 @@ parse_args() {
         INSTALL_PROMPTS=true
         CUSTOM_PROMPTS_SET=true
         IFS=',' read -r -a SELECTED_PROMPTS <<< "${1#*=}"
+        shift
+        ;;
+      --claude)
+        CLAUDE_MODE=true
+        shift
+        ;;
+      --tools)
+        CUSTOM_TOOLS_SET=true
+        if [ $# -ge 2 ] && [[ "$2" != -* ]]; then
+          IFS=',' read -r -a SELECTED_TOOLS <<< "$2"
+          shift
+        fi
+        shift
+        ;;
+      --tools=*)
+        CUSTOM_TOOLS_SET=true
+        IFS=',' read -r -a SELECTED_TOOLS <<< "${1#*=}"
+        shift
+        ;;
+      --no-system-prompt)
+        INSTALL_SYSTEM_PROMPT=false
+        shift
+        ;;
+      --no-statusline)
+        INSTALL_STATUSLINE=false
         shift
         ;;
       --no-extensions)
@@ -915,10 +978,249 @@ print_plan() {
 }
 
 # -----------------------------------------------------------------------------
+# Claude Code Installation (--claude)
+# -----------------------------------------------------------------------------
+run_claude_install() {
+  discover_available_items
+  local claude_dir="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
+  local skills_dir="$claude_dir/skills"
+  local agents_dir="$claude_dir/agents"
+  local prompt_src="$SCRIPT_DIR/APPEND_SYSTEM_PROMPT.md"
+  local prompt_dest="$claude_dir/pi-plugins/APPEND_SYSTEM_PROMPT.md"
+  local claude_md="$claude_dir/CLAUDE.md"
+  local support_dir="$claude_dir/pi-plugins"
+  local settings="$claude_dir/settings.json"
+  local statusline_cmd="node \"$support_dir/statusline/statusline.mjs\""
+  TARGET_DIR="$claude_dir"
+
+  # Claude Code agents live in claude/agents (Claude tool names); agents/ is the Pi set
+  local all_claude_agents=()
+  if [ -d "$SCRIPT_DIR/claude/agents" ]; then
+    while IFS= read -r item; do
+      [ -n "$item" ] && all_claude_agents+=("$item")
+    done < <(find "$SCRIPT_DIR/claude/agents" -mindepth 1 -maxdepth 1 -name "*.md" -exec basename {} .md \; | sort)
+  fi
+
+  if [ "$CUSTOM_TOOLS_SET" = false ] || [ ${#SELECTED_TOOLS[@]} -eq 0 ]; then
+    SELECTED_TOOLS=("${ALL_TOOLS[@]}")
+  fi
+  if [ "$CUSTOM_AGENTS_SET" = false ] || [ ${#SELECTED_AGENTS[@]} -eq 0 ]; then
+    SELECTED_AGENTS=("${all_claude_agents[@]}")
+  fi
+  if [ "$INSTALL_AGENTS" = false ]; then SELECTED_AGENTS=(); fi
+
+  if [ -n "$TARGET_SCOPE" ]; then
+    log_warn "--claude ignores --global/--local; Pi plugins are not installed."
+  fi
+
+  if [ "$UNINSTALL" = true ]; then
+    log_step "Uninstalling from $claude_dir"
+    local removed=0
+    for tool in "${SELECTED_TOOLS[@]}"; do
+      local dest="$skills_dir/$tool"
+      if [ -L "$dest" ] || [ -e "$dest" ]; then
+        uninstall_entry "$dest" "tool $tool"
+        removed=$((removed + 1))
+      fi
+    done
+    for agent in "${SELECTED_AGENTS[@]}"; do
+      local dest="$agents_dir/$agent.md"
+      if [ -L "$dest" ] || [ -e "$dest" ]; then
+        uninstall_entry "$dest" "agent $agent"
+        removed=$((removed + 1))
+      fi
+    done
+    if [ "$INSTALL_SYSTEM_PROMPT" = true ]; then
+      uninstall_entry "$prompt_dest" "system prompt"
+      remove_claude_md_import "$claude_md"
+    fi
+    if [ "$INSTALL_STATUSLINE" = true ]; then
+      claude_statusline restore "$settings" "$statusline_cmd" "$support_dir/statusline.previous.json"
+      uninstall_entry "$support_dir/statusline" "statusline"
+    fi
+    if [ "$INSTALL_AGENTS" = true ] && [ "$CUSTOM_AGENTS_SET" = false ]; then
+      uninstall_entry "$support_dir/hooks" "agent hooks"
+    fi
+    log_success "Uninstallation completed ($removed tools/agents removed from $claude_dir)."
+    exit 0
+  fi
+
+  log_step "Claude Code Installation"
+  if [ "$QUIET" = false ]; then
+    printf "  • ${BOLD}Target:${RESET}        %s\n" "$claude_dir"
+    printf "  • ${BOLD}Method:${RESET}        %s\n" "$METHOD"
+    printf "  • ${BOLD}Tools (%d):${RESET}     %s\n" "${#SELECTED_TOOLS[@]}" "$(IFS=, ; echo "${SELECTED_TOOLS[*]}")"
+    printf "  • ${BOLD}Agents (%d):${RESET}    %s\n" "${#SELECTED_AGENTS[@]}" "$(IFS=, ; echo "${SELECTED_AGENTS[*]}")"
+    printf "  • ${BOLD}System prompt:${RESET} %s\n" "$([ "$INSTALL_SYSTEM_PROMPT" = true ] && echo "import into $claude_md" || echo "skipped")"
+    printf "  • ${BOLD}Status line:${RESET}   %s\n" "$([ "$INSTALL_STATUSLINE" = true ] && echo "statusbar via $settings" || echo "skipped")"
+  fi
+  if [ "$DRY_RUN" = true ]; then
+    printf "\n${YELLOW}${BOLD}DRY RUN MODE ENABLED — No files will be modified.${RESET}\n"
+  fi
+
+  log_step "Installing"
+  local tool_count=0 agent_count=0
+
+  for tool in "${SELECTED_TOOLS[@]}"; do
+    local src="$SCRIPT_DIR/tools/$tool"
+    local dest="$skills_dir/$tool"
+    if [ ! -f "$src/SKILL.md" ]; then
+      log_warn "Tool '$tool' not found (no $src/SKILL.md), skipping."
+      continue
+    fi
+    claude_guard "$dest" || continue
+    install_entry "$src" "$dest" "tool $tool"
+    log_success "tool  $tool -> $dest"
+    tool_count=$((tool_count + 1))
+  done
+
+  for agent in "${SELECTED_AGENTS[@]}"; do
+    local src="$SCRIPT_DIR/claude/agents/$agent.md"
+    local dest="$agents_dir/$agent.md"
+    if [ ! -f "$src" ]; then
+      log_warn "Agent '$agent' not found in $SCRIPT_DIR/claude/agents, skipping."
+      continue
+    fi
+    claude_guard "$dest" || continue
+    install_entry "$src" "$dest" "agent $agent"
+    log_success "agent $agent -> $dest"
+    agent_count=$((agent_count + 1))
+  done
+
+  # Read-only agents call this hook from their frontmatter (PreToolUse on Bash)
+  if [ "$agent_count" -gt 0 ] && claude_guard "$support_dir/hooks"; then
+    install_entry "$SCRIPT_DIR/claude/hooks" "$support_dir/hooks" "agent hooks"
+    log_success "hooks -> $support_dir/hooks"
+  fi
+
+  if [ "$INSTALL_STATUSLINE" = true ] && claude_guard "$support_dir/statusline"; then
+    install_entry "$SCRIPT_DIR/claude/statusline" "$support_dir/statusline" "statusline"
+    claude_statusline set "$settings" "$statusline_cmd" "$support_dir/statusline.previous.json"
+  fi
+
+  if [ "$INSTALL_SYSTEM_PROMPT" = true ] && [ -f "$prompt_src" ]; then
+    if claude_guard "$prompt_dest"; then
+      install_entry "$prompt_src" "$prompt_dest" "system prompt"
+      add_claude_md_import "$claude_md" "$prompt_dest"
+    fi
+  fi
+
+  log_step "Installation Complete"
+  log_success "Installed $tool_count tools and $agent_count agents into $claude_dir"
+  log_info "Note: tools read credentials from env vars (see each SKILL.md). Restart Claude Code to pick up changes."
+}
+
+# Never clobber a file the user wrote by hand (non-symlink) unless --force
+claude_guard() {
+  local dest="$1"
+  if [ -e "$dest" ] && [ ! -L "$dest" ] && [ "$FORCE" = false ]; then
+    log_warn "$dest exists and is not a symlink; skipping (use --force to replace)."
+    return 1
+  fi
+  return 0
+}
+
+# Set or restore settings.json statusLine. The previous value is saved once so --uninstall
+# can put it back. Uses node for a JSON-safe edit (Claude Code needs node anyway).
+claude_statusline() {
+  local mode="$1" settings="$2" cmd="$3" backup="$4"
+  if ! command -v node >/dev/null 2>&1; then
+    log_warn "node not found; set statusLine in $settings manually: {\"type\":\"command\",\"command\":\"$cmd\"}"
+    return 0
+  fi
+  if [ "$DRY_RUN" = true ]; then
+    if [ "$mode" = set ]; then log_info "[dry-run] Would set statusLine in $settings to: $cmd"
+    else log_info "[dry-run] Would restore the previous statusLine in $settings"; fi
+    return 0
+  fi
+  local out
+  out="$(node - "$mode" "$settings" "$cmd" "$backup" <<'NODE'
+const fs = require("fs"), path = require("path");
+const [mode, settings, cmd, backup] = process.argv.slice(2);
+let s = {};
+try { s = JSON.parse(fs.readFileSync(settings, "utf8")); } catch (e) {
+  if (fs.existsSync(settings)) { console.log("error: cannot parse " + settings + ", left unchanged"); process.exit(0); }
+}
+const ours = (v) => v && typeof v.command === "string" && v.command.includes("pi-plugins/statusline/statusline.mjs");
+if (mode === "set") {
+  if (ours(s.statusLine) && s.statusLine.command === cmd) { console.log("unchanged"); process.exit(0); }
+  if (!ours(s.statusLine) && !fs.existsSync(backup)) {
+    fs.mkdirSync(path.dirname(backup), { recursive: true });
+    fs.writeFileSync(backup, JSON.stringify({ statusLine: s.statusLine ?? null }, null, 2) + "\n");
+  }
+  s.statusLine = { type: "command", command: cmd, padding: 0, refreshInterval: 5 };
+  console.log("set");
+} else {
+  if (!ours(s.statusLine)) { console.log("not ours"); process.exit(0); }
+  let prev = null;
+  try { prev = JSON.parse(fs.readFileSync(backup, "utf8")).statusLine; } catch {}
+  if (prev) s.statusLine = prev; else delete s.statusLine;
+  try { fs.unlinkSync(backup); } catch {}
+  console.log(prev ? "restored" : "removed");
+}
+fs.mkdirSync(path.dirname(settings), { recursive: true });
+fs.writeFileSync(settings, JSON.stringify(s, null, 2) + "\n");
+NODE
+)"
+  case "$out" in
+    set) log_success "statusLine -> statusbar (previous saved to $backup)" ;;
+    restored) log_success "statusLine restored from $backup" ;;
+    removed) log_dim "statusLine removed from $settings" ;;
+    error:*) log_warn "${out#error: }" ;;
+    *) log_dim "statusLine: $out" ;;
+  esac
+}
+
+CLAUDE_MD_BEGIN="<!-- pi-plugins:begin (managed by install.sh --claude) -->"
+CLAUDE_MD_END="<!-- pi-plugins:end -->"
+
+# Add an @import of the system prompt to CLAUDE.md inside a marker block (idempotent)
+add_claude_md_import() {
+  local claude_md="$1" prompt="$2"
+  if [ -f "$claude_md" ] && grep -qF "$CLAUDE_MD_BEGIN" "$claude_md"; then
+    log_dim "Import already present in $claude_md"
+    return 0
+  fi
+  if [ "$DRY_RUN" = true ]; then
+    log_info "[dry-run] Would append '@$prompt' to $claude_md"
+    return 0
+  fi
+  mkdir -p "$(dirname "$claude_md")"
+  {
+    [ -s "$claude_md" ] && printf "\n"
+    printf "%s\n@%s\n%s\n" "$CLAUDE_MD_BEGIN" "$prompt" "$CLAUDE_MD_END"
+  } >> "$claude_md"
+  log_success "system prompt imported in $claude_md"
+}
+
+remove_claude_md_import() {
+  local claude_md="$1"
+  [ -f "$claude_md" ] && grep -qF "$CLAUDE_MD_BEGIN" "$claude_md" || return 0
+  if [ "$DRY_RUN" = true ]; then
+    log_info "[dry-run] Would remove the pi-plugins import block from $claude_md"
+    return 0
+  fi
+  local tmp
+  tmp="$(mktemp)"
+  awk -v b="$CLAUDE_MD_BEGIN" -v e="$CLAUDE_MD_END" '
+    $0 == b { skip = 1; next }
+    skip && $0 == e { skip = 0; next }
+    !skip { print }
+  ' "$claude_md" > "$tmp" && cat "$tmp" > "$claude_md"
+  rm -f "$tmp"
+  log_dim "Removed pi-plugins import block from $claude_md"
+}
+
+# -----------------------------------------------------------------------------
 # Main Execution Flow
 # -----------------------------------------------------------------------------
 main() {
   parse_args "$@"
+
+  if [ "$CLAUDE_MODE" = true ]; then
+    run_claude_install
+    exit 0
+  fi
 
   # If no arguments provided in interactive terminal, prompt user
   if [ $# -eq 0 ] && [ -t 0 ] && [ -t 1 ]; then

@@ -159,12 +159,14 @@ When creating git commits, ALWAYS follow the Conventional Commits specification 
 
 ## 1. Commit Structure
 
-  ():
+```text
+<type>(<scope>): <subject>
 
-  • <Key architectural / infrastructure changes>
-  • <Functional / domain / feature changes>
-  • <Configuration / environment adjustments>
-  •
+• <Key architectural / infrastructure changes>
+• <Functional / domain / feature changes>
+• <Configuration / environment adjustments>
+• <Tests / other notable changes>
+```
 
 
 ## 2. Commit Types

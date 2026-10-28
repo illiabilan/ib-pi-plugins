@@ -33,15 +33,31 @@ pi-plugins/
 │   ├── slack/
 │   ├── sound-notify/
 │   ├── subagent/
-│   └── token-stats/
+│   ├── token-stats/
+│   └── trello/
+├── tools/          # Standalone CLIs packaged as Claude Code skills (SKILL.md + script/)
+│   ├── android-vqa/
+│   ├── datadog/
+│   ├── jira/
+│   ├── slack/
+│   └── trello/
 ├── skills/         # SKILL.md packages, loaded on-demand
 │   ├── agentic-tool-validation-loop/
 │   ├── pi-extension-builder/
 │   └── pi-agent-builder/
+├── claude/         # Claude Code side (installed by --claude)
+│   ├── agents/     # agents/ rewritten for Claude Code
+│   ├── hooks/      # read-only Bash guard used by the read-only agents
+│   └── statusline/ # extensions/statusbar ported to a statusLine command
 ├── agents/         # Subagent definitions (used by extensions/subagent)
 │   ├── pi-builder.md
 │   ├── agent-builder.md
-│   └── code_writer.md
+│   ├── babysitter.md
+│   ├── developer.md
+│   ├── feature-architect.md
+│   ├── researcher.md
+│   ├── reviewer.md
+│   └── tester.md
 └── prompts/        # Prompt templates (/command expansions)
     ├── build-tool.md
     └── build-agent.md
@@ -70,6 +86,13 @@ Dockerfile) using deterministic, precision-first sniffers, so Pi's built-in
 Markdown renderer syntax-highlights them exactly as it does for correctly
 tagged fences. Already-tagged fences and ambiguous content are left
 untouched. See `extensions/code_viewer/README.md`.
+
+#### `extensions/trello` + `tools/trello`
+`tools/trello` is a standalone, zero-dependency Trello CLI (compact text or
+`--json`, name-based references, `--dry-run` on every write) that also works from
+Claude Code and Antigravity. The `trello` Pi tool is a thin wrapper over it with an
+approval dialog for writes. See `tools/trello/SKILL.md` and
+`extensions/trello/README.md`.
 
 #### `extensions/grep`
 Ripgrep-backed search: regex, context lines, batched `queries`, file-name
@@ -250,16 +273,7 @@ build something (`pi-extension-builder`), then empirically validate it
 #### `agents/agent-builder.md`
 Mirrors `pi-builder.md` but one level up: builds *new agent definitions*
 using `pi-agent-builder`, then validates the new agent's behavior using
-`agentic-tool-validation-loop`. Used to build `agents/code_writer.md` as a
-worked example.
-
-#### `agents/code_writer.md`
-A narrow-scope implementation agent (built by `agent-builder`): implements
-an already-scoped code change, explicitly refuses to make architectural
-decisions or expand scope unrequested. Independent re-verification found
-its boundary adherence is not 100% reliable on ambiguous prompts - see
-`pi-agent-builder`'s §6 for what this revealed about single-trial
-behavioral testing in general.
+`agentic-tool-validation-loop`.
 
 ### Prompts
 
@@ -335,7 +349,64 @@ Use `./install.sh` to install plugins globally (`~/.pi/agent`) or locally into a
 
 # 6. Interactive wizard (prompts for scope, method, presets):
 ./install.sh
+
+# 7. Claude Code: tools/ (trello, jira, slack, datadog, android-vqa) -> ~/.claude/skills, claude/agents/ -> ~/.claude/agents,
+#    APPEND_SYSTEM_PROMPT.md imported from ~/.claude/CLAUDE.md. Pi is skipped entirely.
+./install.sh --claude
+./install.sh --claude --tools jira,slack --agents researcher   # subset
+./install.sh --claude --no-system-prompt
+./install.sh --claude --uninstall
 ```
+
+### Tools for Claude Code
+
+Each directory in `tools/` is a Claude Code skill wrapping a standalone, zero-dependency
+Node 20+ CLI that talks to a third-party service:
+
+```
+tools/<tool>/
+├── SKILL.md            # when to use it, setup (env vars), rules, command reference
+└── script/
+    ├── <tool>.mjs      # entry point: node script/<tool>.mjs --help
+    └── test/           # node --test script/test/ (fake in-process server, no network)
+```
+
+`./install.sh --claude` links (or with `--copy`, copies) them to
+`${CLAUDE_CONFIG_DIR:-~/.claude}/skills/<tool>`. An existing non-symlink skill with the
+same name is left alone unless `--force` is given. Credentials come from the same env
+vars the Pi extensions use.
+
+### Agents and system prompt for Claude Code
+
+`claude/agents/*.md` are the `agents/` definitions rewritten for Claude Code: Claude tool
+names (`Read`, `Grep`, `Glob`, `Edit`, `Write`, `Bash`, `mcp__figma__*`), `thinking` mapped
+to `effort`, read-only agents get `disallowedTools: Edit, Write, NotebookEdit`, and the
+service CLIs they need are preloaded with `skills:` (e.g. `researcher` gets slack, jira,
+datadog). `pi-builder` and `agent-builder` are Pi-specific and have no Claude version.
+When you change an agent in `agents/`, update its copy in `claude/agents/`.
+
+The read-only agents (researcher, reviewer, feature-architect, tester, babysitter) still need
+`Bash` for git, tests and the service CLIs, so each declares a `PreToolUse` hook that runs
+`claude/hooks/readonly-bash.mjs`. It blocks file mutation (`rm`, `mv`, `sed -i`, `tee`,
+redirection outside /dev/null and temp dirs), git and gh writes, service-CLI writes without
+`--dry-run`, dependency changes and autofix flags, including inside `bash -c`, `$(...)`,
+`xargs` and `find -exec`. It is a guard against mistakes, not a sandbox. Tests:
+`node --test claude/hooks/test/`.
+
+### Status line for Claude Code
+
+`claude/statusline/statusline.mjs` is `extensions/statusbar` as a `statusLine` command: same
+segments (`✻ › ⊙ model › effort:<level> › ⌂ dir › ⑂ branch *m +s ?u !c › ◔ ctx%/window › $cost › HH:MM`),
+same width degradation (abbreviate, drop by priority, restore), sized from `COLUMNS`.
+`--claude` points `statusLine` in `~/.claude/settings.json` at it and saves the previous
+value to `~/.claude/pi-plugins/statusline.previous.json`; `--uninstall` restores it, and
+`--no-statusline` skips it. Segments and the mark are set in `~/.claude/statusbar.json`:
+`{"mark": "✻", "segments": {"effort": false, "extra": false}}`. Tests:
+`node --test claude/statusline/test/`.
+
+`APPEND_SYSTEM_PROMPT.md` is linked to `~/.claude/pi-plugins/APPEND_SYSTEM_PROMPT.md` and
+imported with an `@path` line inside a marked block appended to `~/.claude/CLAUDE.md`, so it
+applies to every session and to subagents. `--uninstall` removes the block.
 
 ### Installation Options
 
@@ -343,6 +414,8 @@ Use `./install.sh` to install plugins globally (`~/.pi/agent`) or locally into a
 |---|---|
 | `-g, --global` | Install globally to `~/.pi/agent` |
 | `-l, --local <PATH>` | Install locally into `<PATH>/.pi` |
+| `--claude` | Install `tools/` as Claude Code skills into `~/.claude/skills`; ignores all Pi options |
+| `--tools [LIST]` | With `--claude`: comma-separated subset of tools |
 | `-s, --link` | Create symlinks to this repository (default) |
 | `-c, --copy` | Copy files instead of symlinking |
 | `-p, --preset <NAME>` | Preset: `all`, `recommended`, `bash-replacement`, `typescript`, `android`, `core` |
@@ -401,7 +474,7 @@ cp -r skills/pi-extension-builder ~/.pi/agent/skills/pi-extension-builder
 cp -r skills/pi-agent-builder ~/.pi/agent/skills/pi-agent-builder
 
 # Agents + prompts
-cp agents/pi-builder.md agents/agent-builder.md agents/code_writer.md ~/.pi/agent/agents/
+cp agents/*.md ~/.pi/agent/agents/
 cp prompts/build-tool.md prompts/build-agent.md ~/.pi/agent/prompts/
 ```
 

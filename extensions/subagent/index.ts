@@ -973,7 +973,7 @@ export default function (pi: ExtensionAPI) {
 			"Delegate tasks to specialized subagents with isolated context.",
 			"Modes: single (agent + task), parallel (tasks array), chain (sequential with {previous} placeholder),",
 			"loop (loop.steps repeated until the loop.until regex matches the last step's output, or loop.maxIterations is hit).",
-			'Loop example: {"loop":{"steps":[{"agent":"code_writer","task":"Implement X. Reviewer feedback so far: {previous}"},{"agent":"reviewer","task":"Review the change to X. If it is correct print APPROVED alone on the last line, otherwise list the problems."}],"until":"^APPROVED$","maxIterations":4}}.',
+			'Loop example: {"loop":{"steps":[{"agent":"developer","task":"Implement X. Reviewer feedback so far: {previous}"},{"agent":"reviewer","task":"Review the change to X. If it is correct print APPROVED alone on the last line, otherwise list the problems."}],"until":"^APPROVED$","maxIterations":4}}.',
 			`Default agent scope is "user" (from ${path.join(getAgentDir(), "agents")}).`,
 			`To enable project-local agents in ${CONFIG_DIR_NAME}/agents, set agentScope: "both" (or "project").`,
 		].join(" "),
