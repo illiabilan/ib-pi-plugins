@@ -11,9 +11,12 @@
  * same glyphs as extensions/statusbar.
  *
  * Segments: mark, model, effort (Claude's equivalent of pi's thinking level), project, git,
- * context, extra (session cost), time (HH:MM). Toggle them in ~/.claude/statusbar.json:
- *   { "mark": "✻", "segments": { "mark": true, "model": true, "effort": true, "project": true,
- *     "git": true, "context": true, "extra": true, "time": true } }
+ * context, extra (session cost), time (HH:MM), and usage, right-aligned: subscription rate
+ * limits (5h / 7d windows) and the spend limit, present only for claude.ai subscription and
+ * enterprise/gateway accounts. Toggle them in ~/.claude/statusbar.json ("margin" is the
+ * number of columns kept free on the right so the line never wraps):
+ *   { "mark": "✻", "margin": 4, "segments": { "mark": true, "model": true, "effort": true,
+ *     "project": true, "git": true, "context": true, "extra": true, "time": true, "usage": true } }
  */
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
@@ -21,23 +24,26 @@ import { homedir } from "node:os";
 import { basename, join, resolve } from "node:path";
 
 export const SEGMENT_ORDER = ["mark", "model", "effort", "project", "git", "context", "extra", "time"];
+/** Drawn at the right edge, after the padding. */
+const RIGHT_SEGMENT = "usage";
 /** First entry is dropped first. `mark` is the last survivor. */
-export const DROP_ORDER = ["time", "extra", "project", "effort", "model", "context", "git", "mark"];
+export const DROP_ORDER = ["time", "extra", "project", "effort", "usage", "model", "context", "git", "mark"];
 
 const GLYPH = { model: "⊙", dir: "⌂", git: "⑂", ctx: "◔", sep: "›" };
 const GIT_TIMEOUT_MS = 1500;
 
 const TIERS = [
-  { model: 64, branch: 64, dir: 40, counters: "full", shorten: 0 },
-  { model: 28, branch: 24, dir: 20, counters: "full", shorten: 0 },
-  { model: 18, branch: 16, dir: 14, counters: "full", shorten: 1 },
-  { model: 12, branch: 12, dir: 10, counters: "dirty", shorten: 2 },
-  { model: 10, branch: 10, dir: 8, counters: "min", shorten: 2 },
+  { model: 64, branch: 64, dir: 40, counters: "full", shorten: 0, usage: "full" },
+  { model: 28, branch: 24, dir: 20, counters: "full", shorten: 0, usage: "full" },
+  { model: 18, branch: 16, dir: 14, counters: "full", shorten: 1, usage: "short" },
+  { model: 12, branch: 12, dir: 10, counters: "dirty", shorten: 2, usage: "short" },
+  { model: 10, branch: 10, dir: 8, counters: "min", shorten: 2, usage: "min" },
 ];
 
 const DEFAULT_CONFIG = {
   mark: "✻",
-  segments: { mark: true, model: true, effort: true, project: true, git: true, context: true, extra: true, time: true },
+  margin: 4,
+  segments: { mark: true, model: true, effort: true, project: true, git: true, context: true, extra: true, time: true, usage: true },
 };
 
 // ---------------------------------------------------------------- terminal width helpers
@@ -184,9 +190,10 @@ export function parsePorcelainV2(out) {
 }
 
 export function normalizeConfig(raw) {
-  const cfg = { mark: DEFAULT_CONFIG.mark, segments: { ...DEFAULT_CONFIG.segments } };
+  const cfg = { mark: DEFAULT_CONFIG.mark, margin: DEFAULT_CONFIG.margin, segments: { ...DEFAULT_CONFIG.segments } };
   if (!raw || typeof raw !== "object") return cfg;
   if (typeof raw.mark === "string" && raw.mark.trim()) cfg.mark = sanitize(raw.mark).slice(0, 4);
+  if (Number.isInteger(raw.margin) && raw.margin >= 0 && raw.margin <= 40) cfg.margin = raw.margin;
   if (raw.segments && typeof raw.segments === "object") {
     for (const key of Object.keys(cfg.segments)) {
       if (typeof raw.segments[key] === "boolean") cfg.segments[key] = raw.segments[key];
@@ -200,6 +207,51 @@ export function normalizeConfig(raw) {
 const num = (v) => (typeof v === "number" && Number.isFinite(v) ? v : null);
 
 /** Claude Code stdin JSON (+ git result) -> the renderer's snapshot. */
+/** resets_at may be epoch seconds, epoch ms or an ISO string. Returns ms or null. */
+export function toMs(v) {
+  if (typeof v === "number" && Number.isFinite(v)) return v < 1e12 ? v * 1000 : v;
+  if (typeof v === "string" && v) { const t = Date.parse(v); return Number.isNaN(t) ? null : t; }
+  return null;
+}
+
+/** Time left until a reset: 45m, 2h10m, 3d4h. */
+export function fmtLeft(ms) {
+  if (ms === null || ms <= 0) return null;
+  const m = Math.ceil(ms / 60000);
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return m % 60 ? `${h}h${m % 60}m` : `${h}h`;
+  return h % 24 ? `${Math.floor(h / 24)}d${h % 24}h` : `${Math.floor(h / 24)}d`;
+}
+
+/** rate_limits -> usage windows. Each window is optional; nothing for API-key accounts. */
+export function usageFrom(rl, now = Date.now()) {
+  if (!rl || typeof rl !== "object") return [];
+  const out = [];
+  const win = (label, w) => {
+    const pct = num(w?.used_percentage);
+    if (pct === null) return;
+    const reset = toMs(w.resets_at);
+    out.push({ label, pct, left: reset === null ? null : fmtLeft(reset - now) });
+  };
+  win("5h", rl.five_hour);
+  win("7d", rl.seven_day);
+  const sl = rl.spend_limit;
+  if (sl && (num(sl.used_percentage) !== null || num(sl.used_usd) !== null)) {
+    const period = { daily: "day", weekly: "wk", monthly: "mo" }[sl.period] ?? "";
+    const used = num(sl.used_usd);
+    const limit = num(sl.limit_usd);
+    const reset = toMs(sl.resets_at);
+    out.push({
+      label: used !== null && limit !== null ? `$${Math.round(used)}/$${Math.round(limit)}${period ? ` ${period}` : ""}` : `spend${period ? ` ${period}` : ""}`,
+      pct: num(sl.used_percentage) ?? (used !== null && limit ? (used / limit) * 100 : null),
+      left: reset === null ? null : fmtLeft(reset - now),
+      spend: true,
+    });
+  }
+  return out;
+}
+
 export function fmtTime(date) {
   return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
 }
@@ -226,6 +278,7 @@ export function snapshotFrom(input, git, now = new Date()) {
     ctxPercent: num(cw.used_percentage),
     cost: num(input?.cost?.total_cost_usd) ?? 0,
     time: fmtTime(now),
+    usage: usageFrom(input?.rate_limits, now.getTime()),
   };
 }
 
@@ -235,6 +288,19 @@ const COLORS = { accent: 35, dim: 90, muted: 37, warning: 33, error: 31, success
 
 export function makeTheme(color = true) {
   return { fg: (name, text) => (color ? `\u001b[${COLORS[name] ?? 39}m${text}\u001b[39m` : text) };
+}
+
+function usageText(usage, level, theme) {
+  // When squeezed, keep only the window closest to its limit.
+  const items = level === "min" ? [usage.reduce((a, b) => ((b.pct ?? -1) > (a.pct ?? -1) ? b : a))] : usage;
+  return items
+    .map((u) => {
+      const pct = u.pct === null ? "?" : `${Math.round(u.pct)}%`;
+      let text = `${theme.fg("dim", u.label)} ${theme.fg(ctxColor(u.pct), pct)}`;
+      if (level === "full" && u.left) text += theme.fg("dim", ` ↻${u.left}`);
+      return text;
+    })
+    .join(theme.fg("dim", " · "));
 }
 
 function ctxColor(p) {
@@ -280,6 +346,7 @@ function buildSegments(snap, cfg, theme, tier) {
   }
   if (seg.extra && snap.cost > 0) out.set("extra", theme.fg("dim", fmtCost(snap.cost)));
   if (seg.time && snap.time) out.set("time", theme.fg("dim", snap.time));
+  if (seg.usage && snap.usage?.length) out.set("usage", usageText(snap.usage, tier.usage, theme));
   return out;
 }
 
@@ -290,7 +357,16 @@ export function renderStatusLine(snap, cfg, theme, rawWidth) {
   const sep = theme.fg("dim", ` ${GLYPH.sep} `);
   const built = [];
   const segsAt = (i) => (built[i] ??= buildSegments(snap, cfg, theme, TIERS[i]));
-  const joinKept = (segs, keep) => SEGMENT_ORDER.filter((k) => keep.has(k) && segs.has(k)).map((k) => segs.get(k)).join(sep);
+  // Left segments joined by the separator; usage, when kept, sits at the right edge with at
+  // least two spaces of padding (so the line is exactly `width` wide whenever usage shows).
+  const joinKept = (segs, keep) => {
+    const left = SEGMENT_ORDER.filter((k) => keep.has(k) && segs.has(k)).map((k) => segs.get(k)).join(sep);
+    if (!keep.has(RIGHT_SEGMENT) || !segs.has(RIGHT_SEGMENT)) return left;
+    const right = segs.get(RIGHT_SEGMENT);
+    if (!left) return right;
+    const pad = Math.max(2, width - visibleWidth(left) - visibleWidth(right));
+    return left + " ".repeat(pad) + right;
+  };
 
   // Phase 1: widest abbreviation tier that fits with every segment present.
   for (let i = 0; i < TIERS.length; i++) {
@@ -349,8 +425,8 @@ if (process.argv[1]?.endsWith("statusline.mjs")) {
   const cfg = loadConfig();
   const cwd = input?.workspace?.current_dir || input?.cwd || process.cwd();
   const git = cfg.segments.git ? readGit(cwd) : null;
-  // Claude Code sets COLUMNS; keep a small margin for its own padding.
-  const width = (Number(process.env.COLUMNS) || 120) - Number(process.env.STATUSBAR_MARGIN ?? 2);
+  // Claude Code sets COLUMNS; keep a margin for its own padding (usage fills to the edge).
+  const width = (Number(process.env.COLUMNS) || 120) - Number(process.env.STATUSBAR_MARGIN ?? cfg.margin);
   const color = !process.env.NO_COLOR;
   process.stdout.write(renderStatusLine(snapshotFrom(input, git), cfg, makeTheme(color), width));
 }

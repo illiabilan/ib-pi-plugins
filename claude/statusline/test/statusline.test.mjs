@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  normalizeConfig, makeTheme, parsePorcelainV2, renderStatusLine, sanitize, shortenModel, snapshotFrom, stripAnsi, visibleWidth,
+  fmtLeft, toMs, usageFrom, normalizeConfig, makeTheme, parsePorcelainV2, renderStatusLine, sanitize, shortenModel, snapshotFrom, stripAnsi, visibleWidth,
 } from "../statusline.mjs";
 
 const SCRIPT = fileURLToPath(new URL("../statusline.mjs", import.meta.url));
@@ -90,4 +90,40 @@ test("CLI: reads stdin + COLUMNS, real git repo, config file", () => {
   const bad = spawnSync(process.execPath, [SCRIPT], { input: "garbage", encoding: "utf8", env: { ...process.env, COLUMNS: "80" } });
   assert.equal(bad.status, 0);
   assert.ok(visibleWidth(bad.stdout) <= 78);
+});
+
+const nowS = Math.floor(NOW.getTime() / 1000);
+const RL = {
+  five_hour: { used_percentage: 23, resets_at: nowS + 7800 },
+  seven_day: { used_percentage: 76.4, resets_at: nowS + 280000 },
+};
+
+test("usage: right-aligned at the edge for subscription accounts, absent for API-key accounts", () => {
+  const snap = snapshotFrom({ ...INPUT, rate_limits: RL }, GIT, NOW);
+  const line = stripAnsi(renderStatusLine(snap, cfg, makeTheme(), 200));
+  assert.equal(visibleWidth(line), 200);
+  assert.match(line, /09:05 {2,}5h 23% ↻2h10m · 7d 76% ↻3d5h$/);
+  assert.doesNotMatch(stripAnsi(renderStatusLine(snapshotFrom(INPUT, GIT, NOW), cfg, makeTheme(), 200)), /5h|7d/);
+});
+
+test("usage: width invariant holds, squeezed form keeps the window nearest its limit, color ramps", () => {
+  const snap = snapshotFrom({ ...INPUT, rate_limits: RL }, GIT, NOW);
+  for (let w = 1; w <= 200; w++) assert.ok(visibleWidth(renderStatusLine(snap, cfg, makeTheme(), w)) <= w, `width ${w}`);
+  const squeezed = [100, 90, 80].map((w) => stripAnsi(renderStatusLine(snap, cfg, makeTheme(), w))).find((l) => /%$/.test(l) && !l.includes("·"));
+  assert.match(squeezed, /7d 76%$/);
+  assert.match(renderStatusLine(snap, cfg, makeTheme(), 200), /\u001b\[33m76%/);
+});
+
+test("usage: spend limit for enterprise/gateway accounts, reset formats, toggle", () => {
+  const u = usageFrom({ spend_limit: { used_percentage: 24, used_usd: 12.3, limit_usd: 50, period: "monthly", resets_at: "2026-11-01T00:00:00Z" } }, Date.parse("2026-10-28T14:00:00Z"));
+  assert.deepEqual(u, [{ label: "$12/$50 mo", pct: 24, left: "3d10h", spend: true }]);
+  assert.equal(toMs(1700000000), 1700000000000);
+  assert.equal(toMs(1700000000000), 1700000000000);
+  assert.equal(fmtLeft(45 * 60000), "45m");
+  assert.equal(fmtLeft(-1), null);
+  assert.deepEqual(usageFrom({ five_hour: {} }), []);
+  const off = normalizeConfig({ segments: { usage: false }, margin: 2 });
+  assert.equal(off.margin, 2);
+  const snap = snapshotFrom({ ...INPUT, rate_limits: RL }, GIT, NOW);
+  assert.doesNotMatch(stripAnsi(renderStatusLine(snap, off, makeTheme(), 200)), /5h/);
 });

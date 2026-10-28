@@ -398,10 +398,15 @@ redirection outside /dev/null and temp dirs), git and gh writes, service-CLI wri
 `claude/statusline/statusline.mjs` is `extensions/statusbar` as a `statusLine` command: same
 segments (`✻ › ⊙ model › effort:<level> › ⌂ dir › ⑂ branch *m +s ?u !c › ◔ ctx%/window › $cost › HH:MM`),
 same width degradation (abbreviate, drop by priority, restore), sized from `COLUMNS`.
+For claude.ai subscription and enterprise/gateway accounts it adds usage at the right edge:
+`5h 23% ↻2h10m · 7d 76% ↻3d5h` (rate-limit windows) or `$12/$50 mo 24%` (spend limit),
+colored at >70% / >90%; API-key accounts get no usage segment because Claude Code sends no
+`rate_limits` for them.
 `--claude` points `statusLine` in `~/.claude/settings.json` at it and saves the previous
 value to `~/.claude/pi-plugins/statusline.previous.json`; `--uninstall` restores it, and
 `--no-statusline` skips it. Segments and the mark are set in `~/.claude/statusbar.json`:
-`{"mark": "✻", "segments": {"effort": false, "extra": false}}`. Tests:
+`{"mark": "✻", "margin": 4, "segments": {"effort": false, "usage": false}}` (`margin` = columns
+kept free on the right; raise it if the line wraps). Tests:
 `node --test claude/statusline/test/`.
 
 `APPEND_SYSTEM_PROMPT.md` is linked to `~/.claude/pi-plugins/APPEND_SYSTEM_PROMPT.md` and
